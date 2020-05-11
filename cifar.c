@@ -36,23 +36,24 @@ void exportPPM(Img_T *data, size_t imgIdx, FILE *ppmOut) {
   /* this is a little gross but i'm lazy */
   fputc('P', ppmOut);
   fputc('6', ppmOut); /* magic num */
-  fputc(' ', ppmOut);
+  fputc('\n', ppmOut);
   fputc('3', ppmOut);
   fputc('2', ppmOut); /* wid */
   fputc(' ', ppmOut);
   fputc('3', ppmOut);
-  fputc('2', ppmOut); /* wid */
+  fputc('2', ppmOut); /* hgt */
   fputc(' ', ppmOut);
   fputc('2', ppmOut);
   fputc('5', ppmOut);
-  fputc('5', ppmOut); /* wid */
+  fputc('5', ppmOut); /* denominator */
   fputc('\n', ppmOut);
 
   for (int i = 0; i < DIM; i++) {
     for (int j = 0; j < DIM; j++) {
-      fputc(data[imgIdx].r[flat2d(i, j, DIM)], ppmOut);
-      fputc(data[imgIdx].g[flat2d(i, j, DIM)], ppmOut);
-      fputc(data[imgIdx].b[flat2d(i, j, DIM)], ppmOut);
+      size_t idx = flat2d(i, j, DIM);
+      fputc(data[imgIdx].r[idx], ppmOut);
+      fputc(data[imgIdx].g[idx], ppmOut);
+      fputc(data[imgIdx].b[idx], ppmOut);
     }
   }
 }

@@ -3,39 +3,40 @@
 #define flat2d(i, j, wid) (i * wid) + j
 #define flat3d(i, j, k, wid, hgt) (hgt * wid * i) + (wid * j) + k
 
-typedef struct GPU_Net {
+typedef struct GPUClassify {
   size_t *topo;
   double *activs;
   double *wgts;
-} GPU_Net_T;
+} GPUClassify_T;
 
-struct Net {
+struct Classify {
   size_t size;
   size_t maxNrn;
-  GPU_Net_T *dev;
+  GPUClassify_T *dev;
 };
 
-struct Filter {
-  size_t wid;
-  size_t hgt;
-  size_t numFltr;
-  double *imgs;
+struct FeatLrn {
+  NetCfg_T spec;
+  double *r;
+  double *g;
+  double *b;
 };
 
 size_t CNN_findMax(size_t *, size_t);
 
-Filter_T *CNN_initFltrs(size_t wid, size_t hgt, size_t numFltr) {
-  Filter_T *fltrs = (Filter_T *)malloc(sizeof(Filter_T));
-  cudaMalloc((void **)&fltrs->imgs, numFltr * wid * hgt * sizeof(double));
+FeatLrn_T *CNN_initFL(NetCfg_T spec) {
+  size_t chnlSize = spec.fltrWid * spec.fltrHgt * spec.numFltr * sizeof(double);
+  assert(chnlSize != 0);
+  FeatLrn_T *net = (FeatLrn_T *)malloc(sizeof(FeatLrn_T));
+  net->spec = spec;
+  cudaMalloc((void **)&net->r, chnlSize);
+  cudaMalloc((void **)&net->b, chnlSize);
+  cudaMalloc((void **)&net->g, chnlSize);
 
-  fltrs->wid = wid;
-  fltrs->hgt = hgt;
-  fltrs->numFltr = numFltr;
-
-  return fltrs;
+  return net;
 }
 
-__global__ void cuda_initFC(GPU_Net_T *net, size_t *topo, size_t netSize) {
+__global__ void cuda_initC(GPUClassify_T *net, size_t *topo, size_t netSize) {
   cudaMalloc((void **)&net->topo, netSize * sizeof(size_t));
   /* deep copy- host memory can only be freed in host */
   for (int i = 0; i < netSize; i++) {
@@ -55,45 +56,45 @@ __global__ void cuda_initFC(GPU_Net_T *net, size_t *topo, size_t netSize) {
   cudaMalloc((void **)&net->wgts, totalWgt * sizeof(double));
 }
 
-Net_T *CNN_initFC(size_t *topology, size_t netSize) {
+Classify_T *CNN_initC(size_t *topology, size_t netSize) {
   assert(netSize > 0 && topology != NULL);
   for (int i = 0; i < netSize; i++) {
     assert(topology[i] != 0);
   }
 
-  Net_T *net = (Net_T *)malloc(sizeof(Net_T));
+  Classify_T *net = (Classify_T *)malloc(sizeof(Classify_T));
   net->maxNrn = CNN_findMax(topology, netSize);
   net->size = netSize;
 
-  cudaMalloc((void **)&net->dev, sizeof(GPU_Net_T));
+  cudaMalloc((void **)&net->dev, sizeof(GPUClassify_T));
 
   /* init topology */
   size_t *topo_d;
   cudaMalloc((void **)&topo_d, netSize * sizeof(size_t));
   cudaMemcpy(topo_d, topology, netSize * sizeof(size_t), cudaMemcpyHostToDevice);
 
-  cuda_initFC<<<1,1>>>(net->dev, topo_d, netSize);
+  cuda_initC<<<1,1>>>(net->dev, topo_d, netSize);
   cudaDeviceSynchronize();
   cudaFree(topo_d);
 
   return net;
 }
 
-__global__ void cuda_freeFC(GPU_Net_T *net) {
+__global__ void cuda_freeC(GPUClassify_T *net) {
   cudaFree(net->topo);
   cudaFree(net->activs);
   cudaFree(net->wgts);
 }
 
-void CNN_freeFC(Net_T *net) {
-  cuda_freeFC<<<1,1>>>(net->dev);
+void CNN_freeC(Classify_T *net) {
+  cuda_freeC<<<1,1>>>(net->dev);
   cudaDeviceSynchronize();
   cudaFree(net->dev);
   free(net);
   cudaDeviceReset();
 }
 
-__global__ void cuda_testFC(GPU_Net_T *net, size_t size) {
+__global__ void cuda_testC(GPUClassify_T *net, size_t size) {
 	for (size_t i = 0; i < size; i++) {
 		printf("  layer %lu:\n", i);
 		printf("    numNrn %lu:\n", net->topo[i]);
@@ -109,14 +110,16 @@ __global__ void cuda_testFC(GPU_Net_T *net, size_t size) {
 	}
 }
 
-void CNN_testFC(Net_T *net) {
-  cuda_testFC<<<1,1>>>(net->dev, net->size);
+void CNN_testC(Classify_T *net) {
+  cuda_testC<<<1,1>>>(net->dev, net->size);
   cudaDeviceSynchronize();
 }
 
-void CNN_freeFltrs(Filter_T *fltrs) {
-  cudaFree(fltrs->imgs);
-  free(fltrs);
+void CNN_freeFC(FeatLrn_T *net) {
+  cudaFree(net->r);
+  cudaFree(net->g);
+  cudaFree(net->b);
+  free(net);
 }
 
 size_t CNN_findMax(size_t *arr, size_t len) {
