@@ -15,7 +15,25 @@ struct Net {
   GPU_Net_T *dev;
 };
 
+struct Filter {
+  size_t wid;
+  size_t hgt;
+  size_t numFltr;
+  double *imgs;
+};
+
 size_t CNN_findMax(size_t *, size_t);
+
+Filter_T *CNN_initFltrs(size_t wid, size_t hgt, size_t numFltr) {
+  Filter_T *fltrs = (Filter_T *)malloc(sizeof(Filter_T));
+  cudaMalloc((void **)&fltrs->imgs, numFltr * wid * hgt * sizeof(double));
+
+  fltrs->wid = wid;
+  fltrs->hgt = hgt;
+  fltrs->numFltr = numFltr;
+
+  return fltrs;
+}
 
 __global__ void cuda_initFC(GPU_Net_T *net, size_t *topo, size_t netSize) {
   cudaMalloc((void **)&net->topo, netSize * sizeof(size_t));
@@ -94,6 +112,11 @@ __global__ void cuda_testFC(GPU_Net_T *net, size_t size) {
 void CNN_testFC(Net_T *net) {
   cuda_testFC<<<1,1>>>(net->dev, net->size);
   cudaDeviceSynchronize();
+}
+
+void CNN_freeFltrs(Filter_T *fltrs) {
+  cudaFree(fltrs->imgs);
+  free(fltrs);
 }
 
 size_t CNN_findMax(size_t *arr, size_t len) {
