@@ -6,40 +6,35 @@
 #include <stdint.h>
 #include <assert.h>
 
-const uint8_t NUM_CHNL = 3;
+static const uint8_t NUM_CHNL = 3;
 
-typedef struct Img {
-  uint8_t lbl;
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-} Img_T;
-
-typedef struct NetCfg {
-  size_t numFltr;
-  size_t fltrWid;
-  size_t fltrHgt;
-  size_t stride;
-} NetCfg_T;
-
-typedef struct NetDat {
-  size_t num;
-  size_t hgt;
+typedef struct ImgList {
+  size_t numImg;
   size_t wid;
-  Img_T *dat;
-} NetDat_T;
+  size_t hgt;
+
+  double *r; 
+  double *g;
+  double *b;
+} ImgList_T;
+
+typedef struct Data {
+  size_t *lbls;
+  ImgList_T imgDat;
+} Data_T;
 
 typedef struct Classify Classify_T;
-typedef struct FeatLrn FeatLrn_T;
+typedef struct FLearn FLearn_T;
 
-/* note: assumes image is in device mem */
-void CNN_convolve(FeatLrn_T *feats, NetCfg_T *img);
+ImgList_T *CNN_convolve(FLearn_T *net, Data_T *input);
 
-FeatLrn_T *CNN_initFL(NetCfg_T spec);
-void CNN_freeFC(FeatLrn_T *net);
+FLearn_T *CNN_initFL(size_t numFltr, size_t fltrWid, size_t fltrHgt, size_t stride);
+void CNN_freeFL(FLearn_T *net);
 
 Classify_T *CNN_initC(size_t *topology, size_t netSize);
 void CNN_testC(Classify_T *net);
 void CNN_freeC(Classify_T *net);
+
+void CNN_freeData(Data_T* input);
 
 #endif

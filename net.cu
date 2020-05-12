@@ -1,6 +1,6 @@
 #include "net.h"
 
-#define flat2d(i, j, wid) (i * wid) + j
+#define flat2d(i, j, wid) (i * wid) + j 
 #define flat3d(i, j, k, wid, hgt) (hgt * wid * i) + (wid * j) + k
 
 typedef struct GPUClassify {
@@ -15,23 +15,24 @@ struct Classify {
   GPUClassify_T *dev;
 };
 
-struct FeatLrn {
-  NetCfg_T spec;
-  double *r;
-  double *g;
-  double *b;
+struct FLearn {
+  size_t stride;
+  ImgList_T featrs;
 };
 
 size_t CNN_findMax(size_t *, size_t);
 
-FeatLrn_T *CNN_initFL(NetCfg_T spec) {
-  size_t chnlSize = spec.fltrWid * spec.fltrHgt * spec.numFltr * sizeof(double);
-  assert(chnlSize != 0);
-  FeatLrn_T *net = (FeatLrn_T *)malloc(sizeof(FeatLrn_T));
-  net->spec = spec;
-  cudaMalloc((void **)&net->r, chnlSize);
-  cudaMalloc((void **)&net->b, chnlSize);
-  cudaMalloc((void **)&net->g, chnlSize);
+FLearn_T *CNN_initFL(size_t numFeat, size_t featWid, size_t featHgt, size_t stride) {
+  FLearn_T *net = (FLearn_T *)malloc(sizeof(FLearn_T));
+  net->stride = stride;
+  net->featrs.numImg = numFeat;
+  net->featrs.wid = featWid;
+  net->featrs.hgt = featHgt;
+
+  size_t chnlSize = numFeat * featWid * featHgt * sizeof(double);
+  cudaMalloc((void **)&net->featrs.r, chnlSize);
+  cudaMalloc((void **)&net->featrs.g, chnlSize);
+  cudaMalloc((void **)&net->featrs.b, chnlSize);
 
   return net;
 }
@@ -115,11 +116,21 @@ void CNN_testC(Classify_T *net) {
   cudaDeviceSynchronize();
 }
 
-void CNN_freeFC(FeatLrn_T *net) {
-  cudaFree(net->r);
-  cudaFree(net->g);
-  cudaFree(net->b);
+void CNN_freeFL(FLearn_T *net) {
+  cudaFree(net->featrs.r);
+  cudaFree(net->featrs.b);
+  cudaFree(net->featrs.g);
+
   free(net);
+}
+
+void CNN_freeData(Data_T* input) {
+  cudaFree(input->lbls);
+  cudaFree(input->imgDat.r);
+  cudaFree(input->imgDat.g);
+  cudaFree(input->imgDat.b);
+  cudaDeviceReset();
+  free(input);
 }
 
 size_t CNN_findMax(size_t *arr, size_t len) {
