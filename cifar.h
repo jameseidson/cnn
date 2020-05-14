@@ -9,17 +9,17 @@
 
 #define TEST_SET 5;
 
-static const size_t NUM_IMG = 60000;
 static const size_t BATCH_SIZE = 10000;
 static const size_t NUM_BATCH = 6;
+static const size_t NUM_IMG = BATCH_SIZE * NUM_BATCH;
 static const size_t DIM = 32;
 static const size_t CHNL_SIZE = 1024;
 
-typedef struct Img Img_T;
+typedef struct Cifar_Img Cifar_Img_T;
 
-Img_T *readImg(FILE **batchBins);
-Data_T *prepData(Img_T *data);
-void exportPPM(Img_T *data, size_t imgIdx, FILE *ppmOut);
-void freeCifarImg(Img_T *data);
+Cifar_Img_T *Cifar_readImg(FILE **batchBins);
+Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num);
+void Cifar_exportPPM(Cifar_Img_T *cifar, size_t imgIdx, FILE *ppmOut);
+void Cifar_freeImg(Cifar_Img_T *data);
 
 #endif
