@@ -4,9 +4,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+__global__ void convolveIdx(Convlvd_T *conv, Features_T *kern, double *imgs, size_t idx) {
+  dim3 blkSize(BLKS_3D, BLKS_3D, BLKS_3D);
+
+  dim3 grdSize(numBlk(kern->num, BLKS_3D), numBlk(conv->hgt, BLKS_3D), numBlk(conv->wid, BLKS_3D));
+
+  CNN_convolve<<<grdSize, blkSize>>>(conv, kern, &imgs[idx * CHNL_SIZE * NUM_CHNL]);
+  cudaDeviceSynchronize();
+}
 
 int main() {
-  cudaDeviceSetLimit(cudaLimitMallocHeapSize, ULLONG_MAX);
   FILE *batchBins[NUM_BATCH];
   
   batchBins[0] = fopen("./cifar-10-batches-bin/data_batch_1.bin", "rb");
@@ -22,18 +29,22 @@ int main() {
     fclose(batchBins[i]);
   }
 
+  //cudaDeviceSetLimit(cudaLimitMallocHeapSize, ULLONG_MAX);
   Data_T *netData = Cifar_prepData(cifar, 0, 60000);
+  //CNN_testData(netData, 59999);
+  //Cifar_exportPPM(cifar, 59999, stdout);
 
-  //Cifar_exportPPM(cifar, 0, stdout);
+  Features_T *kern = CNN_initFtrs(5, 3, 3);
+  Convlvd_T *conv = CNN_initConvlvd(kern, netData);
+  convolveIdx<<<1, 1>>>(conv, kern, netData->imgs, 0);
+  cudaDeviceSynchronize();
+
+
 
   Cifar_freeImg(cifar);
   CNN_freeData(netData);
-
-
-  /*
-  Features_T *kernel = CNN_initFtrs(5, 2, 2);
-  CNN_freeFtrs(kernel);
-  */
+  CNN_freeFtrs(kern);
+  CNN_freeConvlvd(conv);
 
   cudaDeviceReset();
   return 0;

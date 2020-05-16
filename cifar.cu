@@ -1,10 +1,5 @@
 #include "cifar.h"
 
-#define BLK_SIZE 256
-#define flat2d(i, j, max_j) (i * max_j) + j 
-#define flat3d(i, j, k, max_j, max_k) (i * max_j * max_k) + (j * max_k) + k
-#define numBlk(dim) (dim / BLK_SIZE) + 1
-
 struct Cifar_Img {
   uint8_t lbl;
   uint8_t *r;
@@ -15,9 +10,9 @@ struct Cifar_Img {
 Cifar_Img_T *Cifar_readImg(FILE **batchBins) {
   Cifar_Img_T *cifar = (Cifar_Img_T *)malloc(NUM_IMG * sizeof(Cifar_Img_T));
 
-  for (int i = 0; i < NUM_BATCH; i++) {
+  for (size_t i = 0; i < NUM_BATCH; i++) {
     FILE *curBin = batchBins[i];
-    for (int j = 0; j < BATCH_SIZE; j++) {
+    for (size_t j = 0; j < BATCH_SIZE; j++) {
       Cifar_Img_T *curImg = &cifar[flat2d(i, j, BATCH_SIZE)];
 
       fread(&curImg->lbl, sizeof(uint8_t), 1, curBin);
@@ -48,13 +43,13 @@ __global__ void cuda_prepData(double *imgs, size_t num, uint8_t *r, uint8_t *g, 
       size_t k = j / 3;
       switch(j % 3) {
         case 0:
-          curImg[j] = (double)cur_r[k];
+          curImg[j] = (double)cur_r[k] / 255.0f;
           break;
         case 1:
-          curImg[j] = (double)cur_g[k];
+          curImg[j] = (double)cur_g[k] / 255.0f;
           break;
         case 2:
-          curImg[j] = (double)cur_b[k];
+          curImg[j] = (double)cur_b[k] / 255.0f;
           break;
       }
     }
@@ -68,11 +63,11 @@ Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num) {
   cudaMalloc((void **)&data->imgs, totalPxls * sizeof(double));
 
   data->num = num;
-  data->wid = DIM;
   data->hgt = DIM;
+  data->wid = DIM;
 
   size_t endIdx = idx + num;
-  for (int i = idx; i < endIdx; i++) {
+  for (size_t i = idx; i < endIdx; i++) {
     size_t tmpLbl = (size_t)cifar[idx].lbl;
     cudaMemcpy(&data->lbls[i - idx], &tmpLbl, sizeof(size_t), cudaMemcpyHostToDevice);
   }
@@ -86,13 +81,15 @@ Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num) {
   cudaMalloc((void **)&tmp_b, totalChnlBytes);
 
   size_t chnlBytes = CHNL_SIZE * sizeof(uint8_t);
-  for (int i = 0; i < num; i++) {
-    cudaMemcpy(&tmp_r[i * CHNL_SIZE], cifar[i].r, chnlBytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(&tmp_g[i * CHNL_SIZE], cifar[i].g, chnlBytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(&tmp_b[i * CHNL_SIZE], cifar[i].b, chnlBytes, cudaMemcpyHostToDevice);
+  for (size_t i = 0; i < num; i++) {
+    size_t chnlIdx = i * CHNL_SIZE;
+    size_t cifarIdx = i + idx;
+    cudaMemcpy(&tmp_r[chnlIdx], cifar[cifarIdx].r, chnlBytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(&tmp_g[chnlIdx], cifar[cifarIdx].g, chnlBytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(&tmp_b[chnlIdx], cifar[cifarIdx].b, chnlBytes, cudaMemcpyHostToDevice);
   }
 
-  cuda_prepData<<<numBlk(num), BLK_SIZE>>>(data->imgs, num, tmp_r, tmp_g, tmp_b);
+  cuda_prepData<<<numBlk(num, BLKS_1D), BLKS_1D>>>(data->imgs, num, tmp_r, tmp_g, tmp_b);
   cudaDeviceSynchronize();
 
   cudaFree(tmp_r);
@@ -117,8 +114,8 @@ void Cifar_exportPPM(Cifar_Img_T *cifar, size_t imgIdx, FILE *ppmOut) {
   fputc('5', ppmOut);
   fputc('\n', ppmOut);
 
-  for (int i = 0; i < DIM; i++) {
-    for (int j = 0; j < DIM; j++) {
+  for (size_t i = 0; i < DIM; i++) {
+    for (size_t j = 0; j < DIM; j++) {
       size_t idx = flat2d(i, j, DIM);
       fputc(cifar[imgIdx].r[idx], ppmOut);
       fputc(cifar[imgIdx].g[idx], ppmOut);
@@ -128,7 +125,7 @@ void Cifar_exportPPM(Cifar_Img_T *cifar, size_t imgIdx, FILE *ppmOut) {
 }
 
 void Cifar_freeImg(Cifar_Img_T *cifar) {
-    for (int i = 0; i < NUM_IMG; i++) {
+    for (size_t i = 0; i < NUM_IMG; i++) {
       free(cifar[i].r);
       free(cifar[i].b);
       free(cifar[i].g);
