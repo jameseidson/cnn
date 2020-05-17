@@ -18,54 +18,128 @@ struct Classify {
 
 size_t findMax(size_t *, size_t);
 
-__global__ void CNN_convolve(Convlvd_T *conv, Features_T *kern, double *img) {
-  size_t x = flat2d(blockIdx.x, threadIdx.x, blockDim.x);
-  size_t y = flat2d(blockIdx.y, threadIdx.y, blockDim.y);
-  size_t z = flat2d(blockIdx.z, threadIdx.z, blockDim.z);
+__global__ void CNN_pool(Convlvd_T *conv, double *buffer) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t y = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
+  size_t z = FLAT2D(blockIdx.z, threadIdx.z, blockDim.z);
 
-  size_t imgWid = conv->wid + kern->wid - 1;
-  size_t kernPxls = kern->hgt * kern->wid;
-  double chnlTotal[NUM_CHNL];
-  
-  if (x < kern->num) {
-    if (y < conv->hgt) {
-      if (z < conv->wid) {
-        chnlTotal[RED] = 0.00f;
-        chnlTotal[GRN] = 0.00f;
-        chnlTotal[BLU] = 0.00f;
-        for (size_t i = y; i - y < kern->hgt; i++) {
-          for (size_t j = z; j - z < kern->wid; j++) {
-            for (size_t k = 0; k < NUM_CHNL; k++) {
-              chnlTotal[k] += img[flat3d(i, j, k, imgWid, NUM_CHNL)] * 
-                        kern->imgs[flat4d(x, (i - y), (j - z), k, kern->hgt, kern->wid, NUM_CHNL)];
-            }
+  size_t stride = conv->stride;
+  size_t hgt = conv->hgt;
+  size_t wid = conv->wid;
+  size_t poolHgt = ((hgt - conv->winDim) / stride) + 1;
+  size_t poolWid = ((wid - conv->winDim) / stride) + 1;
+
+  if (x < conv->num && y < hgt && y % stride == 0 && z < wid && z % stride == 0) {
+    double chnlMax[NUM_CHNL] = { DBL_MIN, DBL_MIN, DBL_MIN };
+    for (size_t i = y; i - y < conv->winDim; i++) {
+      for (size_t j = z; j - z < conv->winDim; j++) {
+        for (uint8_t k = 0; k < NUM_CHNL; k++) {
+          double curPxl = conv->imgs[FLAT4D(x, i, j, k, hgt, wid, NUM_CHNL)];
+          if(curPxl > chnlMax[k]) {
+            chnlMax[k] = curPxl;
           }
         }
-
-        for (uint8_t i = 0; i < NUM_CHNL; i++) {
-          conv->imgs[flat4d(x, y, z, i, conv->hgt, conv->wid, NUM_CHNL)] = chnlTotal[i] / kernPxls;
-        }
       }
+    }
+
+    for (uint8_t i = 0; i < NUM_CHNL; i++) {
+      buffer[FLAT4D(x, (y / stride), (z / stride), i, poolHgt, poolWid, NUM_CHNL)] = chnlMax[i];
+    }
+  }
+
+  conv->hgt = poolHgt;
+  conv->wid = poolWid;
+
+  __syncthreads();
+  if (x < conv->num && y < poolHgt && z < poolWid) {
+    for (int i = 0; i < NUM_CHNL; i++) {
+      size_t idx = FLAT4D(x, y, z, i, poolHgt, poolWid, NUM_CHNL);
+      conv->imgs[idx] = buffer[idx];
     }
   }
 }
 
-__global__ void cuda_initConvlvd(Convlvd_T *conv, Features_T *kern, size_t imgHgt, size_t imgWid) {
-  conv->num = kern->num;
-  conv->hgt = imgHgt - kern->hgt + 1;
-  conv->wid = imgWid - kern->wid + 1;
+__global__ void CNN_testConvolve(Convlvd_T *conv) {
+  for (size_t i = 0; i < conv->num; i++) {
+    printf("Printing convolved feature #%lu:\n", i);
+    printf("Red Channel:\n");
+    for (size_t j = 0; j < conv->hgt; j++) {
+      for (size_t k = 0; k < conv->wid; k++) {
+        printf("%0.2f ", conv->imgs[FLAT4D(i, j, k, 0, conv->hgt, conv->wid, NUM_CHNL)]);
+      }
+      printf("\n");
+    }
 
-  cudaMalloc((void **)&conv->imgs, conv->num * conv->hgt * conv->wid * NUM_CHNL * sizeof(double));
-  size_t totalPxls = kern->num * kern->hgt * kern->wid * NUM_CHNL;
-  for (size_t i = 0; i < totalPxls; i++) {
-    conv->imgs[i] = 0.5f;
+    printf("Green Channel:\n");
+    for (size_t j = 0; j < conv->hgt; j++) {
+      for (size_t k = 0; k < conv->wid; k++) {
+        printf("%0.2f ", conv->imgs[FLAT4D(i, j, k, 1, conv->hgt, conv->wid, NUM_CHNL)]);
+      }
+      printf("\n");
+    }
+
+    printf("Blue Channel:\n");
+    for (size_t j = 0; j < conv->hgt; j++) {
+      for (size_t k = 0; k < conv->wid; k++) {
+        printf("%0.2f ", conv->imgs[FLAT4D(i, j, k, 2, conv->hgt, conv->wid, NUM_CHNL)]);
+      }
+      printf("\n");
+    }
   }
 }
 
-Convlvd_T *CNN_initConvlvd(Features_T *kern, Data_T *data) {
+__global__ void CNN_convolve(Convlvd_T *conv, Features_T *kern, double *img) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t y = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
+  size_t z = FLAT2D(blockIdx.z, threadIdx.z, blockDim.z);
+
+  size_t imgWid = conv->wid + kern->wid - 1;
+  size_t kernPxls = kern->hgt * kern->wid;
+  
+  if (x < kern->num && y < conv->hgt && z < conv->wid) {
+    double chnlTotal[NUM_CHNL] = { 0.0f, 0.0f, 0.0f };
+    for (size_t i = y; i - y < kern->hgt; i++) {
+      for (size_t j = z; j - z < kern->wid; j++) {
+        for (size_t k = 0; k < NUM_CHNL; k++) {
+          chnlTotal[k] += img[FLAT3D(i, j, k, imgWid, NUM_CHNL)] * 
+                    kern->imgs[FLAT4D(x, (i - y), (j - z), k, kern->hgt, kern->wid, NUM_CHNL)];
+        }
+      }
+    }
+
+    for (uint8_t i = 0; i < NUM_CHNL; i++) {
+      conv->imgs[FLAT4D(x, y, z, i, conv->hgt, conv->wid, NUM_CHNL)] = chnlTotal[i] / kernPxls;
+    }
+  }
+}
+
+__global__ void cuda_initConvlvd(Convlvd_T *conv, Features_T *kern, size_t imgHgt, size_t imgWid,
+                                                                    size_t winDim, size_t stride) {
+
+  conv->num = kern->num;
+
+  conv->hgt = imgHgt - kern->hgt + 1;
+  conv->wid = imgWid - kern->wid + 1;
+
+  assert(winDim > 0 && winDim < conv->hgt && winDim < conv->wid);
+  assert((conv->hgt - winDim) % stride == 0);
+  assert((conv->wid - winDim) % stride == 0);
+
+  cudaMalloc((void **)&conv->imgs, conv->num * conv->hgt * conv->wid * NUM_CHNL * sizeof(double));
+
+  size_t totalPxls = conv->num * conv->hgt * conv->wid * NUM_CHNL;
+  for (size_t i = 0; i < totalPxls; i++) {
+    conv->imgs[i] = 0.5f;
+  }
+
+  conv->winDim = winDim;
+  conv->stride = stride;
+}
+
+Convlvd_T *CNN_initConvlvd(Features_T *kern, Data_T *data, size_t winDim, size_t stride) {
   Convlvd_T *conv;
   cudaMalloc((void **)&conv, sizeof(Convlvd_T));
-  cuda_initConvlvd<<<1, 1>>>(conv, kern, data->hgt, data->wid);
+  cuda_initConvlvd<<<1, 1>>>(conv, kern, data->hgt, data->wid, winDim, stride);
   cudaDeviceSynchronize();
 
   return conv;
@@ -83,26 +157,32 @@ void CNN_freeConvlvd(Convlvd_T *conv) {
 }
 
 __global__ void cuda_testData(double *imgs, size_t *lbls, size_t idx, size_t hgt, size_t wid) {
+  double sum = 0;
   printf("Red Channel:\n");
   for (size_t i = 0; i < hgt; i++) {
     for (size_t j = 0; j < wid; j++) {
-      printf("%0.2f ", imgs[flat4d(idx, i, j, 0, hgt, wid, NUM_CHNL)]);
+      printf("%0.2f ", imgs[FLAT4D(idx, i, j, 0, hgt, wid, NUM_CHNL)]);
+      sum += imgs[FLAT4D(idx, i, j, 0, hgt, wid, NUM_CHNL)];
     }
     printf("\n");
   }
 
+  sum = 0;
   printf("Green Channel:\n");
   for (size_t i = 0; i < hgt; i++) {
     for (size_t j = 0; j < wid; j++) {
-      printf("%0.2f ", imgs[flat4d(idx, i, j, 1, hgt, wid, NUM_CHNL)]);
+      printf("%0.2f ", imgs[FLAT4D(idx, i, j, 1, hgt, wid, NUM_CHNL)]);
+      sum += imgs[FLAT4D(idx, i, j, 1, hgt, wid, NUM_CHNL)];
     }
     printf("\n");
   }
 
+  sum = 0;
   printf("Blue Channel:\n");
   for (size_t i = 0; i < hgt; i++) {
     for (size_t j = 0; j < wid; j++) {
-      printf("%0.2f ", imgs[flat4d(idx, i, j, 2, hgt, wid, NUM_CHNL)]);
+      printf("%0.2f ", imgs[FLAT4D(idx, i, j, 2, hgt, wid, NUM_CHNL)]);
+      sum += imgs[FLAT4D(idx, i, j, 2, hgt, wid, NUM_CHNL)];
     }
     printf("\n");
   }
@@ -201,10 +281,10 @@ __global__ void cuda_testClsfier(GPUClassify_T *net, size_t size) {
 		printf("  layer %lu:\n", i);
 		printf("    numNrn %lu:\n", net->topo[i]);
 		for (size_t j = 0; j < net->topo[i]; j++) {
-			printf("    neuron %lu (activ: %.2f) weights:\n      ", j, net->activs[flat2d(i, j, size)]);
+			printf("    neuron %lu (activ: %.2f) weights:\n      ", j, net->activs[FLAT2D(i, j, size)]);
       if (i != size - 1) {
 				for (size_t k = 0; k < net->topo[i + 1]; k++) {
-					printf("[%.2f] ", net->wgts[flat3d(i, j, k, size, net->topo[i])]);
+					printf("[%.2f] ", net->wgts[FLAT3D(i, j, k, size, net->topo[i])]);
 				}
       }
 			printf("\n");

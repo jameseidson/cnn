@@ -6,11 +6,23 @@
 
 __global__ void convolveIdx(Convlvd_T *conv, Features_T *kern, double *imgs, size_t idx) {
   dim3 blkSize(BLKS_3D, BLKS_3D, BLKS_3D);
-
-  dim3 grdSize(numBlk(kern->num, BLKS_3D), numBlk(conv->hgt, BLKS_3D), numBlk(conv->wid, BLKS_3D));
+  dim3 grdSize(NUMBLK(kern->num, BLKS_3D), NUMBLK(conv->hgt, BLKS_3D), NUMBLK(conv->wid, BLKS_3D));
 
   CNN_convolve<<<grdSize, blkSize>>>(conv, kern, &imgs[idx * CHNL_SIZE * NUM_CHNL]);
   cudaDeviceSynchronize();
+}
+
+__global__ void callPool(Convlvd_T *conv) {
+  double *buffer;
+  cudaMalloc((void **)&buffer, conv->num * conv->hgt * conv->wid * NUM_CHNL * sizeof(double));
+
+  dim3 blkSize(BLKS_3D, BLKS_3D, BLKS_3D);
+  dim3 grdSize(NUMBLK(conv->num, BLKS_3D), NUMBLK(conv->hgt, BLKS_3D), NUMBLK(conv->wid, BLKS_3D));
+
+  CNN_pool<<<grdSize, blkSize>>>(conv, buffer);
+  cudaDeviceSynchronize();
+
+  cudaFree(buffer);
 }
 
 int main() {
@@ -31,15 +43,17 @@ int main() {
 
   //cudaDeviceSetLimit(cudaLimitMallocHeapSize, ULLONG_MAX);
   Data_T *netData = Cifar_prepData(cifar, 0, 60000);
-  //CNN_testData(netData, 59999);
-  //Cifar_exportPPM(cifar, 59999, stdout);
+  //CNN_testData(netData, 0);
+  //Cifar_exportPPM(cifar, 0, stdout);
 
-  Features_T *kern = CNN_initFtrs(5, 3, 3);
-  Convlvd_T *conv = CNN_initConvlvd(kern, netData);
+  Features_T *kern = CNN_initFtrs(1, 3, 3);
+  Convlvd_T *conv = CNN_initConvlvd(kern, netData, 2, 2);
+
   convolveIdx<<<1, 1>>>(conv, kern, netData->imgs, 0);
+  CNN_testConvolve<<<1, 1>>>(conv);
+  callPool<<<1, 1>>>(conv);
+  CNN_testConvolve<<<1, 1>>>(conv);
   cudaDeviceSynchronize();
-
-
 
   Cifar_freeImg(cifar);
   CNN_freeData(netData);

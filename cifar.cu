@@ -13,7 +13,7 @@ Cifar_Img_T *Cifar_readImg(FILE **batchBins) {
   for (size_t i = 0; i < NUM_BATCH; i++) {
     FILE *curBin = batchBins[i];
     for (size_t j = 0; j < BATCH_SIZE; j++) {
-      Cifar_Img_T *curImg = &cifar[flat2d(i, j, BATCH_SIZE)];
+      Cifar_Img_T *curImg = &cifar[FLAT2D(i, j, BATCH_SIZE)];
 
       fread(&curImg->lbl, sizeof(uint8_t), 1, curBin);
 
@@ -31,7 +31,7 @@ Cifar_Img_T *Cifar_readImg(FILE **batchBins) {
 }
 
 __global__ void cuda_prepData(double *imgs, size_t num, uint8_t *r, uint8_t *g, uint8_t *b) {
-  size_t imgIdx = flat2d(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t imgIdx = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
   size_t imgSize = NUM_CHNL * CHNL_SIZE;
 
   if (imgIdx < num) {
@@ -89,7 +89,7 @@ Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num) {
     cudaMemcpy(&tmp_b[chnlIdx], cifar[cifarIdx].b, chnlBytes, cudaMemcpyHostToDevice);
   }
 
-  cuda_prepData<<<numBlk(num, BLKS_1D), BLKS_1D>>>(data->imgs, num, tmp_r, tmp_g, tmp_b);
+  cuda_prepData<<<NUMBLK(num, BLKS_1D), BLKS_1D>>>(data->imgs, num, tmp_r, tmp_g, tmp_b);
   cudaDeviceSynchronize();
 
   cudaFree(tmp_r);
@@ -116,7 +116,7 @@ void Cifar_exportPPM(Cifar_Img_T *cifar, size_t imgIdx, FILE *ppmOut) {
 
   for (size_t i = 0; i < DIM; i++) {
     for (size_t j = 0; j < DIM; j++) {
-      size_t idx = flat2d(i, j, DIM);
+      size_t idx = FLAT2D(i, j, DIM);
       fputc(cifar[imgIdx].r[idx], ppmOut);
       fputc(cifar[imgIdx].g[idx], ppmOut);
       fputc(cifar[imgIdx].b[idx], ppmOut);
