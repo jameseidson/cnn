@@ -3,7 +3,7 @@
 
 case "$1" in
   "net")
-    nvcc -I/opt/cuda/include/ -rdc=true -lcudadevrt -arch=sm_35 -o cnn net.cu main.cu cifar.cu
+    nvcc -I/opt/cuda/include/ -rdc=true -lcudadevrt -arch=sm_35 -o cnn def.cu net.cu main.cu cifar.cu
     ;;
   *)
     echo "Error: invalid argument"
