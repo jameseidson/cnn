@@ -20,16 +20,12 @@ static const uint8_t NUM_CHNL = 3;
 static const uint16_t BLKS_1D = 256;
 static const uint8_t BLKS_3D = 8;
 
-typedef struct GPUClassify {
+typedef struct Classify {
+  size_t numLyr;
+  size_t maxNrn;
   size_t *topo;
   double *activs; /* 2d arr: netSize * nrnsPerLyr */
   double *wgts; /* 3d arr: netSize * nrnsPerLyr * wgtsPerNrn */
-} GPUClassify_T;
-
-typedef struct Classify {
-  size_t size;
-  size_t maxNrn;
-  GPUClassify_T *dev;
 } Classify_T;
 
 typedef struct Features { /* whole thing is stored in device mem */
@@ -56,11 +52,11 @@ typedef struct Data {
   double *imgs; /* 4d arr: num * hgt * wid * colors (r, g, b) */
 } Data_T;
 
-Classify_T *CNN_initClsfier(size_t *topology, size_t netSize);
+Classify_T *CNN_initClsfier(size_t *topology, size_t numLyr);
 Convlvd_T *CNN_initConvlvd(Features_T *kern, Data_T *data, size_t winDim, size_t stride);
 Features_T *CNN_initFtrs(size_t num, size_t hgt, size_t wid);
 
-void CNN_freeClsfier(Classify_T *net);
+void CNN_freeClsfier(Classify_T *cls);
 void CNN_freeConvlvd(Convlvd_T *conv);
 void CNN_freeFtrs(Features_T *kern);
 void CNN_freeData(Data_T *data);

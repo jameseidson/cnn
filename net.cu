@@ -1,4 +1,21 @@
 #include "net.h"
+#define SIG(x) 1.0f/(1.0f + exp(-x))
+#define DSIG(x) SIG(x) * (1 - SIG(X))
+
+__global__ void CNN_feedForward(Classify_T *cls) {
+  for (size_t i = 1; i < cls->numLyr; i++) {
+    size_t numNrn = (i == cls->numLyr - 1) ? cls->topo[i] : cls->topo[i] - 1;
+    size_t prevLyr = i - 1;
+    for (size_t j = 0; j < numNrn; j++) {
+      double sum = 0;
+      for (size_t k = 0; k < cls->topo[prevLyr]; k++) {
+        sum += cls->wgts[FLAT3D(prevLyr, k, j, cls->topo[prevLyr], numNrn)]
+             * cls->activs[FLAT2D(prevLyr, k, cls->topo[prevLyr])];
+      }
+      cls->activs[FLAT2D(i, j, numNrn)] = SIG(sum);
+    }
+  }
+}
 
 __global__ void CNN_normalize(Convlvd_T *conv) {
   size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
@@ -74,6 +91,10 @@ __global__ void CNN_convolve(Convlvd_T *conv, Features_T *kern, double *img) {
 }
 
 __global__ void CNN_testConvolve(Convlvd_T *conv) {
+  printf("Num features: %lu\n", conv->num);
+  printf("Feature wid: %lu\n", conv->hgt);
+  printf("Feature Hgt: %lu\n", conv->wid);
+
   for (size_t i = 0; i < conv->num; i++) {
     printf("Printing convolved feature #%lu:\n", i);
     printf("Red Channel:\n");
@@ -102,26 +123,33 @@ __global__ void CNN_testConvolve(Convlvd_T *conv) {
   }
 }
 
-__global__ void cuda_testClsfier(GPUClassify_T *net, size_t size) {
+/* TODO: this is bugged- don't call it until you fix */
+__global__ void cuda_testClsfier(Classify_T *cls) {
+  size_t size = cls->numLyr;
 	for (size_t i = 0; i < size; i++) {
 		printf("  layer %lu:\n", i);
-		printf("    numNrn %lu:\n", net->topo[i]);
-		for (size_t j = 0; j < net->topo[i]; j++) {
-      if (j == net->topo[i] - 1 && i != 0 && i != size - 1) {
+		printf("    numNrn %lu:\n", cls->topo[i]);
+		for (size_t j = 0; j < cls->topo[i]; j++) {
+      if (j == cls->topo[i] - 1 && i != 0 && i != size - 1) {
         printf("BIAS ");
       } else {
         printf("     ");
       }
-      printf("neuron %lu (activ: %.2f) weights:\n      ", j, net->activs[FLAT2D(i, j, net->topo[i])]);
+      printf("neuron %lu (activ: %.1f) weights:\n      ", j, cls->activs[FLAT2D(i, j, cls->topo[i])]);
       if (i != size - 1) {
-        size_t loopLimit = (i == size - 2) ? net->topo[i + 1] : net->topo[i + 1] - 1;
+        size_t loopLimit = (i == size - 2) ? cls->topo[i + 1] : cls->topo[i + 1] - 1;
 				for (size_t k = 0; k < loopLimit; k++) {
-					printf("[%.2f] ", net->wgts[FLAT3D(i, j, k, net->topo[i], net->topo[i + 1])]);
+					printf("[%.1f] ", cls->wgts[FLAT3D(i, j, k, cls->topo[i], cls->topo[i + 1])]);
 				}
       }
 			printf("\n");
 		}
 	}
+}
+
+void CNN_testClsfier(Classify_T *cls) {
+  cuda_testClsfier<<<1,1>>>(cls);
+  cudaDeviceSynchronize();
 }
 
 __global__ void cuda_testData(double *imgs, size_t *lbls, size_t idx, size_t hgt, size_t wid) {
@@ -154,12 +182,6 @@ __global__ void cuda_testData(double *imgs, size_t *lbls, size_t idx, size_t hgt
     }
     printf("\n");
   }
-}
-
-
-void CNN_testClsfier(Classify_T *net) {
-  cuda_testClsfier<<<1,1>>>(net->dev, net->size);
-  cudaDeviceSynchronize();
 }
 
 void CNN_testData(Data_T *data, size_t idx) {

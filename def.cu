@@ -1,55 +1,52 @@
 #include "def.h"
 
-#define RED 0
-#define GRN 1
-#define BLU 2
-
 size_t findMax(size_t *, size_t);
 
-__global__ void cuda_initClsfier(GPUClassify_T *net, size_t *topo, size_t netSize) {
-  cudaMalloc((void **)&net->topo, netSize * sizeof(size_t));
-  for (size_t i = 0; i < netSize; i++) {
-    net->topo[i] = (i == 0 || i == netSize - 1) ? topo[i] : topo[i] + 1; /* add a bias to hiddens */
+__global__ void cuda_initClsfier(Classify_T *cls, size_t *topo, size_t numLyr, size_t maxNrn) {
+  cls->numLyr = numLyr;
+  cls->maxNrn = maxNrn;
+
+  /* deep copy topo otherwise we must free from host, which is not possible because it's a member of a 
+  device-stored struct. yeah, it's pretty gross */
+  cudaMalloc((void **)&cls->topo, numLyr * sizeof(size_t));
+  for (size_t i = 0; i < numLyr; i++) {
+    cls->topo[i] = (i == 0 || i == numLyr - 1) ? topo[i] : topo[i] + 1;
   }
 
   size_t totalNrn = 0;
-  for (size_t i = 0; i < netSize; i++) {
-    totalNrn += net->topo[i];
+  for (size_t i = 0; i < numLyr; i++) {
+    totalNrn += cls->topo[i];
   }
-  cudaMalloc((void **)&net->activs, totalNrn * sizeof(double));
+  cudaMalloc((void **)&cls->activs, totalNrn * sizeof(double));
   for (size_t i = 0; i < totalNrn; i++) {
-    net->activs[i] = 0.5f;
+    cls->activs[i] = 0.0f;
   }
+
 
   size_t totalWgt = 0;
-  for (size_t i = 0; i < netSize - 1; i++) {
-    totalWgt += net->topo[i] * topo[i + 1];
+  for (size_t i = 0; i < numLyr- 1; i++) {
+    totalWgt += cls->topo[i] * topo[i + 1];
   }
-  cudaMalloc((void **)&net->wgts, totalWgt * sizeof(double));
+  cudaMalloc((void **)&cls->wgts, totalWgt * sizeof(double));
   for (size_t i = 0; i < totalWgt; i++) {
-    net->wgts[i] = 0.5f;
+    cls->wgts[i] = 0.01f;
   }
 }
 
-Classify_T *CNN_initClsfier(size_t *topology, size_t netSize) {
-  Classify_T *net = (Classify_T *)malloc(sizeof(Classify_T));
-  net->maxNrn = findMax(topology, netSize) + 1;
-  net->size = netSize;
+Classify_T *CNN_initClsfier(size_t *topology, size_t numLyr) {
+  Classify_T *cls;
+  cudaMalloc((void **)&cls, sizeof(Classify_T));
 
-  cudaMalloc((void **)&net->dev, sizeof(GPUClassify_T));
+  size_t *topo;
+  cudaMalloc((void **)&topo, numLyr * sizeof(size_t));
+  cudaMemcpy(topo, topology, numLyr * sizeof(size_t), cudaMemcpyHostToDevice);
 
-  size_t *topo_d;
-  cudaMalloc((void **)&topo_d, netSize * sizeof(size_t));
-  cudaMemcpy(topo_d, topology, netSize * sizeof(size_t), cudaMemcpyHostToDevice);
-
-  cuda_initClsfier<<<1, 1>>>(net->dev, topo_d, netSize);
+  cuda_initClsfier<<<1, 1>>>(cls, topo, numLyr, findMax(topology, numLyr));
   cudaDeviceSynchronize();
-  cudaFree(topo_d);
 
-  return net;
-}
-
-__global__ void cuda_initConvlvd(Convlvd_T *conv, Features_T *kern, size_t imgHgt, size_t imgWid,
+  cudaFree(topo);
+  return cls;
+} __global__ void cuda_initConvlvd(Convlvd_T *conv, Features_T *kern, size_t imgHgt, size_t imgWid,
                                                                     size_t winDim, size_t stride) {
   conv->num = kern->num;
 
@@ -64,7 +61,7 @@ __global__ void cuda_initConvlvd(Convlvd_T *conv, Features_T *kern, size_t imgHg
 
   size_t totalPxls = conv->num * conv->hgt * conv->wid * NUM_CHNL;
   for (size_t i = 0; i < totalPxls; i++) {
-    conv->imgs[i] = 0.5f;
+    conv->imgs[i] = 0.1f;
   }
 
   conv->winDim = winDim;
@@ -88,7 +85,7 @@ __global__ void cuda_initFtrs(Features_T *kern, size_t num, size_t hgt, size_t w
   size_t numImg = num * hgt * wid * NUM_CHNL;
   cudaMalloc((void **)&kern->imgs, numImg * sizeof(double));
   for (size_t i = 0; i < numImg; i++) {
-    kern->imgs[i] = 0.5f;
+    kern->imgs[i] = 0.1f;
   }
 }
 
@@ -101,19 +98,17 @@ Features_T *CNN_initFtrs(size_t numFeat, size_t hgt, size_t wid) {
   return kern;
 }
 
-__global__ void cuda_freeClsfier(GPUClassify_T *net) {
+__global__ void cuda_freeClsfier(Classify_T *net) {
   cudaFree(net->topo);
   cudaFree(net->activs);
   cudaFree(net->wgts);
 }
 
-void CNN_freeClsfier(Classify_T *net) {
-  cuda_freeClsfier<<<1,1>>>(net->dev);
+void CNN_freeClsfier(Classify_T *cls) {
+  cuda_freeClsfier<<<1,1>>>(cls);
   cudaDeviceSynchronize();
-  cudaFree(net->dev);
-  free(net);
+  cudaFree(cls);
 }
-
 
 __global__ void cuda_freeConvlvd(Convlvd_T *conv) {
   cudaFree(conv->imgs);
