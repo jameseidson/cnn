@@ -10,22 +10,22 @@
 #include <stdbool.h>
 
 const uint8_t NUM_LYR_TYPE = 5;
-typedef enum {
+typedef enum LayerT {
   NET,
   CONVOLUTIONAL,
   POOLING,
   NORMALIZATION,
   FULLY_CONNECTED,
   INVALID_LYR
-} Layer_T;
+} LayerT_T;
 
 const uint8_t NUM_KEY = 10;
-typedef enum {
-  NUM_EPOCH,
+typedef enum Key {
+  NUM_LYR,
   NUM_FEAT,
   FEAT_HGT,
   FEAT_WID,
-  WIN_SIZE,
+  WIN_DIM,
   STRIDE,
   LRN_RATE,
   NUM_HIDDEN,
@@ -34,32 +34,33 @@ typedef enum {
   INVALID_KEY
 } Key_T;
 
-typedef enum {
+typedef enum LexErr {
   BAD_TOKEN,
   UNEXPECTED_EOF,
   BAD_LYR_TYPE,
   BAD_KEY,
+  EXPECTED_VAL,
   NUM_OVERFLOW
-} Error_T;
+} LexErr_T;
 
-typedef enum {
+typedef enum Token {
   LYR_TYPE,
   KEY,
   INT_VAL,
-  FLOAT_VAL,
-  VAL_LIST
+  FLOAT_VAL
 } Token_T;
 
-typedef union {
+typedef union TokenVal {
   size_t ival;
   double fval;
-  Layer_T ltype;
+  LayerT_T ltype;
   Key_T key;
 } TokenVal_T;
 
 typedef struct TokenList {
   Token_T token;
   TokenVal_T val;
+  size_t lineNum;
   struct TokenList *next;
 } TokenList_T;
 

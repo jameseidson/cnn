@@ -18,8 +18,8 @@ Cifar_Img_T *Cifar_readImg(FILE **batchBins) {
       fread(&curImg->lbl, sizeof(uint8_t), 1, curBin);
 
       curImg->r = (uint8_t *)malloc(CHNL_SIZE * sizeof(uint8_t));
-      curImg->b = (uint8_t *)malloc(CHNL_SIZE * sizeof(uint8_t));
       curImg->g = (uint8_t *)malloc(CHNL_SIZE * sizeof(uint8_t));
+      curImg->b = (uint8_t *)malloc(CHNL_SIZE * sizeof(uint8_t));
 
       fread(curImg->r, sizeof(uint8_t), CHNL_SIZE, curBin);
       fread(curImg->g, sizeof(uint8_t), CHNL_SIZE, curBin);

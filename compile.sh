@@ -2,8 +2,8 @@
 #sm35 is minimum requirement for dynamic parallelism- using for compatibility
 
 case "$1" in
-  "net")
-    nvcc -I/opt/cuda/include/ -rdc=true -lcudadevrt -arch=sm_35 -o cnn def.cu net.cu main.cu cifar.cu
+  "cifar")
+    nvcc -I/opt/cuda/include/ -rdc=true -lcudadevrt -arch=sm_35 -o cifar def.cu net.cu cifar.cu cnn.cu main.cu 
     ;;
   *)
     echo "Error: invalid argument"

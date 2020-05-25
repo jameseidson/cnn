@@ -20,31 +20,8 @@ static const uint8_t NUM_CHNL = 3;
 static const uint16_t BLKS_1D = 256;
 static const uint8_t BLKS_3D = 8;
 
-typedef struct Classify {
-  size_t numLyr;
-  size_t maxNrn;
-  size_t *topo;
-  double *activs; /* 2d arr: netSize * nrnsPerLyr */
-  double *wgts; /* 3d arr: netSize * nrnsPerLyr * wgtsPerNrn */
-} Classify_T;
-
-typedef struct Features { /* whole thing is stored in device mem */
-  size_t num;
-  size_t hgt;
-  size_t wid;
-  double *imgs; /* 4d arr: num * hgt * wid * colors (r, g, b) */
-} Features_T;
-
-typedef struct Convlvd { /* whole thing is in device mem */
-  size_t stride;
-  size_t winDim;
-  size_t num;
-  size_t hgt;
-  size_t wid;
-  double *imgs; /* 4d arr: num * hgt * wid * colors (r, g, b) */
-} Convlvd_T;
-
 typedef struct Data {
+  size_t numEpoch;
   size_t num;
   size_t hgt;
   size_t wid;
@@ -52,13 +29,41 @@ typedef struct Data {
   double *imgs; /* 4d arr: num * hgt * wid * colors (r, g, b) */
 } Data_T;
 
-Classify_T *CNN_initClsfier(size_t *topology, size_t numLyr);
-Convlvd_T *CNN_initConvlvd(Features_T *kern, Data_T *data, size_t winDim, size_t stride);
-Features_T *CNN_initFtrs(size_t num, size_t hgt, size_t wid);
+struct ImgList {
+  size_t num;
+  size_t hgt;
+  size_t wid;
+  double *imgs; /* 4d arr: num * hgt * wid * colors (r, g, b) */
+};
 
-void CNN_freeClsfier(Classify_T *cls);
-void CNN_freeConvlvd(Convlvd_T *conv);
-void CNN_freeFtrs(Features_T *kern);
+typedef struct ImgList Net_T;
+typedef struct ImgList Features_T;
+
+typedef struct Pool {
+  size_t winDim;
+  size_t stride;
+} Pool_T;
+
+typedef struct Classify {
+  size_t numLyr;
+  size_t maxNrn;
+  size_t *topo;
+  double *activs; /* 2d arr: netSize * nrnsPerLyr */
+  double *wgts; /* 3d arr: netSize * nrnsPerLyr * wgtsPerNrn */
+  double lrnRate;
+} Classify_T;
+
+
+Data_T *CNN_initData(size_t numEpoch, size_t num, size_t hgt, size_t wid, size_t *lbls, double *imgs);
+Net_T *CNN_initNet(Features_T *kern, Data_T *data);
+Features_T *CNN_initFtrs(size_t num, size_t hgt, size_t wid);
+Pool_T *CNN_initPool(size_t winDim, size_t stride);
+Classify_T *CNN_initClsfier(size_t *topology, size_t numLyr, double lrnRate);
+
 void CNN_freeData(Data_T *data);
+void CNN_freeNet(Net_T *net);
+void CNN_freeFtrs(Features_T *kern);
+void CNN_freePool(Pool_T *pool);
+void CNN_freeClsfier(Classify_T *cls);
 
 #endif
