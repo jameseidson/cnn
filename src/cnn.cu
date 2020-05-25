@@ -1,4 +1,4 @@
-#include "cnn.h"
+#include "../include/cnn.h"
 
 struct CNN {
   size_t numLyr;

@@ -3,8 +3,8 @@ CU_C = nvcc
 
 CU_CFLAGS = -g -O0 -arch=sm_35 -lineinfo -use_fast_math -rdc=true
 
-IFLAGS = -I/opt/cuda/include/
-LDFLAGS = -L/opt/cuda/lib64/
+IFLAGS = -I/opt/cuda/include/ -I../src/
+LDFLAGS = -L/opt/cuda/lib64/ 
 LDLIBS = -lm -lcuda -lcudart -lcudadevrt
 
 all: cifar
@@ -18,16 +18,16 @@ main.o: main.cu
 cifar.o: cifar.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
-cnn.o: cnn.cu
+cnn.o: ../src/cnn.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
-net.o: net.cu
+net.o: ../src/net.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
-def.o: def.cu
+def.o: ../src/def.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
-lex.o: lex.cu
+lex.o: ../src/lex.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 clean:

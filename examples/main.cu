@@ -1,5 +1,4 @@
-#include "cnn.h"
-#include "net.h"
+#include "../include/cnn.h"
 #include "cifar.h"
 
 #include <stdio.h>
@@ -49,12 +48,12 @@ __global__ void callFeedForward(Classify_T *cls, Net_T *net) {
 int oldmain() {
   FILE *batchBins[NUM_BATCH];
   
-  batchBins[0] = fopen("./cifar-10-batches-bin/data_batch_1.bin", "rb");
-  batchBins[1] = fopen("./cifar-10-batches-bin/data_batch_2.bin", "rb");
-  batchBins[2] = fopen("./cifar-10-batches-bin/data_batch_3.bin", "rb");
-  batchBins[3] = fopen("./cifar-10-batches-bin/data_batch_4.bin", "rb");
-  batchBins[4] = fopen("./cifar-10-batches-bin/data_batch_5.bin", "rb");
-  batchBins[5] = fopen("./cifar-10-batches-bin/test_batch.bin", "rb");
+  batchBins[0] = fopen("../cifar-10-batches-bin/data_batch_1.bin", "rb");
+  batchBins[1] = fopen("../cifar-10-batches-bin/data_batch_2.bin", "rb");
+  batchBins[2] = fopen("../cifar-10-batches-bin/data_batch_3.bin", "rb");
+  batchBins[3] = fopen("../cifar-10-batches-bin/data_batch_4.bin", "rb");
+  batchBins[4] = fopen("../cifar-10-batches-bin/data_batch_5.bin", "rb");
+  batchBins[5] = fopen("../cifar-10-batches-bin/test_batch.bin", "rb");
 
   Cifar_Img_T *cifar = Cifar_readImg(batchBins);
 
@@ -96,12 +95,15 @@ int main() {
   /* cudaDeviceSetLimit(cudaLimitMallocHeapSize, ULLONG_MAX); */
 
   FILE *batchBins[NUM_BATCH];
-  batchBins[0] = fopen("./cifar-10-batches-bin/data_batch_1.bin", "rb");
-  batchBins[1] = fopen("./cifar-10-batches-bin/data_batch_2.bin", "rb");
-  batchBins[2] = fopen("./cifar-10-batches-bin/data_batch_3.bin", "rb");
-  batchBins[3] = fopen("./cifar-10-batches-bin/data_batch_4.bin", "rb");
-  batchBins[4] = fopen("./cifar-10-batches-bin/data_batch_5.bin", "rb");
-  batchBins[5] = fopen("./cifar-10-batches-bin/test_batch.bin", "rb");
+  batchBins[0] = fopen("../cifar-10-batches-bin/data_batch_1.bin", "rb");
+  batchBins[1] = fopen("../cifar-10-batches-bin/data_batch_2.bin", "rb");
+  batchBins[2] = fopen("../cifar-10-batches-bin/data_batch_3.bin", "rb");
+  batchBins[3] = fopen("../cifar-10-batches-bin/data_batch_4.bin", "rb");
+  batchBins[4] = fopen("../cifar-10-batches-bin/data_batch_5.bin", "rb");
+  batchBins[5] = fopen("../cifar-10-batches-bin/test_batch.bin", "rb");
+  for (size_t i = 0; i < NUM_BATCH; i++) {
+    assert (batchBins[i]);
+  }
 
   Cifar_Img_T *cifar = Cifar_readImg(batchBins);
 
@@ -111,6 +113,7 @@ int main() {
   Data_T *data = Cifar_prepData(cifar, 0, 60000);
 
   FILE *cfgFile = fopen("./cifar.cfg", "r");
+  assert(cfgFile);
   CNN_T *cnn = CNN_init(cfgFile, data);
 
 
