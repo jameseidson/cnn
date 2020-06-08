@@ -20,22 +20,18 @@ Data_T *CNN_initData(size_t numEpoch, size_t num, size_t hgt, size_t wid, size_t
   return data;
 }
 
-__global__ void cuda_initNet(Net_T *net, Features_T *kern, size_t imgHgt, size_t imgWid) {
-  net->num = kern->num;
-  net->hgt = imgHgt - kern->hgt + 1;
-  net->wid = imgWid - kern->wid + 1;
-  cudaMalloc((void **)&net->imgs, net->num * net->hgt * net->wid * NUM_CHNL * sizeof(double));
+__global__ void cuda_initNet(Net_T *net, size_t maxNum, size_t hgt, size_t wid) {
+  net->num = 1;
+  net->hgt = hgt;
+  net->wid = wid;
 
-  size_t totalPxls = net->num * net->hgt * net->wid * NUM_CHNL;
-  for (size_t i = 0; i < totalPxls; i++) {
-    net->imgs[i] = 0.1f;
-  }
+  cudaMalloc((void **)&net->imgs, maxNum * net->hgt * net->wid * NUM_CHNL * sizeof(double));
 }
 
-Net_T *CNN_initNet(Features_T *kern, Data_T *data) {
+Net_T *CNN_initNet(size_t maxNum, size_t hgt, size_t wid) {
   Net_T *net;
   cudaMalloc((void **)&net, sizeof(Net_T));
-  cuda_initNet<<<1, 1>>>(net, kern, data->hgt, data->wid);
+  cuda_initNet<<<1, 1>>>(net, maxNum, hgt, wid);
   cudaDeviceSynchronize();
 
   return net;

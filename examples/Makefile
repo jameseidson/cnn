@@ -4,7 +4,7 @@ CU_C = nvcc
 CU_CFLAGS = -g -O0 -arch=sm_35 -lineinfo -use_fast_math -rdc=true
 
 IFLAGS = -I/opt/cuda/include/ -I../src/
-LDFLAGS = -L/opt/cuda/lib64/ 
+LDFLAGS = -L/opt/cuda/lib64/
 LDLIBS = -lm -lcuda -lcudart -lcudadevrt
 
 all: cifar
