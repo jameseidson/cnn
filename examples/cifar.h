@@ -18,7 +18,7 @@ static const uint8_t NUM_OUT = 10;
 typedef struct Cifar_Img Cifar_Img_T;
 
 Cifar_Img_T *Cifar_readAll(FILE **batchBins);
-Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num);
+Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num, size_t numEpoch);
 double *Cifar_getImg(Cifar_Img_T *cifar, size_t idx);
 uint8_t Cifar_getLbl(Cifar_Img_T *cifar, size_t idx);
 void Cifar_exportPPM(Cifar_Img_T *cifar, size_t idx, FILE *ppmOut);

@@ -8,6 +8,13 @@
 
 const size_t ALLOWED_BYTES = 5000000000; /* gtx 1070 has 8GB of VRAM */
 
+void printOut(double *out) {
+  printf("Output layer:\n");
+  for (uint8_t i = 0; i < NUM_OUT; i++) {
+    printf("[%u]: %f\n", i, out[i]);
+  }
+}
+
 int main() {
   cudaDeviceSetLimit(cudaLimitMallocHeapSize, ALLOWED_BYTES);
 
@@ -27,15 +34,19 @@ int main() {
   for (int i = 0; i < NUM_BATCH; i++) {
     fclose(batchBins[i]);
   }
-  Data_T *data = Cifar_prepData(cifar, 0, 60000);
-  FILE *cfgFile = fopen("./cifar.cfg", "r");
+  Data_T *data = Cifar_prepData(cifar, 0, 1, 10000);
+  FILE *cfgFile = fopen("./test.cfg", "r");
   assert(cfgFile);
+
   CNN_T *cnn = CNN_init(cfgFile, data);
-  fclose(cfgFile);
+  CNN_train(cnn, data);
 
-  double *img = Cifar_getImg(cifar, TEST_SET * BATCH_SIZE);
-  CNN_feed(cnn, img);
+  double *img = Cifar_getImg(cifar, 0);
+  double *out = (double *)malloc(NUM_OUT * sizeof(double));
+  CNN_classify(cnn, img, out);
+  printOut(out);
 
+  free(out);
   CNN_free(cnn);
   CNN_freeData(data);
   Cifar_freeAll(cifar);

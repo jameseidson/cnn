@@ -112,20 +112,20 @@ __global__ void cuda_prepData(double *imgs, size_t num, uint8_t *r, uint8_t *g, 
   }
 }
 
-Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num) {
+Data_T *Cifar_prepData(Cifar_Img_T *cifar, size_t idx, size_t num, size_t numEpoch) {
   size_t totalPxls = num * DIM * DIM * NUM_CHNL;
   Data_T *data = (Data_T *)malloc(sizeof(Data_T));
-  cudaMalloc((void **)&data->lbls, num * sizeof(size_t));
+  data->lbls = (size_t *)malloc(num * sizeof(size_t));
   cudaMalloc((void **)&data->imgs, totalPxls * sizeof(double));
 
   data->num = num;
   data->hgt = DIM;
   data->wid = DIM;
+  data->numEpoch = numEpoch;
 
   size_t endIdx = idx + num;
   for (size_t i = idx; i < endIdx; i++) {
-    size_t tmpLbl = (size_t)cifar[idx].lbl;
-    cudaMemcpy(&data->lbls[i - idx], &tmpLbl, sizeof(size_t), cudaMemcpyHostToDevice);
+    data->lbls[i - idx] = (size_t)cifar[i].lbl;
   }
 
   size_t totalChnlBytes = num * CHNL_SIZE * sizeof(uint8_t);

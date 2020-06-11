@@ -48,10 +48,10 @@ void appendTok(TokenList_T **head, Token_T tok, TokenVal_T val, size_t lineNum) 
 void freeTokens(TokenList_T *tokens) {
   if (!tokens) {
     return;
-  } else {
-    freeTokens(tokens->next);
-    free(tokens);
   }
+
+  freeTokens(tokens->next);
+  free(tokens);
 }
 
 void lexErr(LexErr_T errType, Lexer_T *lex) {
@@ -288,5 +288,4 @@ TokenList_T *lex(FILE *f) {
   free(lex);
 
   return tokens;
-
 }

@@ -10,8 +10,8 @@ Data_T *CNN_initData(size_t numEpoch, size_t num, size_t hgt, size_t wid, size_t
   data->wid = wid;
 
   size_t lblBytes = num * sizeof(size_t);
-  cudaMalloc((void **)&data->lbls, lblBytes);
-  cudaMemcpy(data->lbls, lbls, lblBytes, cudaMemcpyHostToDevice);
+  data->lbls = (size_t *)malloc(lblBytes);
+  memcpy(data->lbls, lbls, lblBytes);
 
   size_t imgBytes = num * hgt * wid * NUM_CHNL * sizeof(double);
   cudaMalloc((void **)&data->imgs, imgBytes);
@@ -69,31 +69,41 @@ Pool_T *CNN_initPool(size_t winDim, size_t stride) {
 
 __global__ void cuda_initClsfier(Classify_T *cls, size_t *topo, size_t numLyr, size_t maxNrn, double lrnRate) {
   cls->numLyr = numLyr;
-  cls->maxNrn = maxNrn;
   cls->lrnRate = lrnRate;
+  size_t totalNrn = 0;
+  size_t totalWgt = 0;
+  size_t lastLyr = numLyr - 1;
+
+  cudaMalloc((void **)&cls->errs, ++maxNrn * sizeof(double));
+  cudaMalloc((void **)&cls->errBuf, maxNrn * sizeof(double));
+  for (size_t i = 0; i < maxNrn; i++) {
+    cls->errBuf[i] = 0.0f;
+    cls->errs[i] = 0.0f;
+  }
 
   /* deep copy topo otherwise we must free from host, which is not possible because it's a member of a 
   device-stored struct. yeah, it's pretty gross */
   cudaMalloc((void **)&cls->topo, numLyr * sizeof(size_t));
   for (size_t i = 0; i < numLyr; i++) {
-    cls->topo[i] = (i == 0 || i == numLyr - 1) ? topo[i] : topo[i] + 1;
-  }
-
-  size_t totalNrn = 0;
-  for (size_t i = 0; i < numLyr; i++) {
+    cls->topo[i] = (i == lastLyr) ? topo[i] : topo[i] + 1;
     totalNrn += cls->topo[i];
   }
+
   cudaMalloc((void **)&cls->activs, totalNrn * sizeof(double));
   for (size_t i = 0; i < totalNrn; i++) {
-    cls->activs[i] = 0.0f;
+    cls->activs[i] = 1.0f;
   }
 
-
-  size_t totalWgt = 0;
-  for (size_t i = 0; i < numLyr- 1; i++) {
+  cudaMalloc((void **)&cls->wgtTopo, numLyr * sizeof(size_t));
+  for (size_t i = 0; i < lastLyr; i++) {
+    cls->wgtTopo[i] = topo[i + 1];
     totalWgt += cls->topo[i] * topo[i + 1];
   }
+  cls->wgtTopo[lastLyr] = 0;
+  cls->totalWgt = totalWgt;
+
   cudaMalloc((void **)&cls->wgts, totalWgt * sizeof(double));
+  cudaMalloc((void **)&cls->wgtBuf, totalWgt * sizeof(double));
   for (size_t i = 0; i < totalWgt; i++) {
     cls->wgts[i] = 0.01f;
   }
@@ -115,7 +125,7 @@ Classify_T *CNN_initClsfier(size_t *topology, size_t numLyr, double lrnRate) {
 }
 
 void CNN_freeData(Data_T *data) {
-  cudaFree(data->lbls);
+  free(data->lbls);
   cudaFree(data->imgs);
   free(data);
 }
@@ -146,10 +156,13 @@ void CNN_freePool(Pool_T *pool) {
   cudaFree(pool);
 }
 
-__global__ void cuda_freeClsfier(Classify_T *fc) {
-  cudaFree(fc->topo);
-  cudaFree(fc->activs);
-  cudaFree(fc->wgts);
+__global__ void cuda_freeClsfier(Classify_T *cls) {
+  cudaFree(cls->errBuf);
+  cudaFree(cls->errs);
+  cudaFree(cls->topo);
+  cudaFree(cls->activs);
+  cudaFree(cls->wgts);
+  cudaFree(cls->wgtBuf);
 }
 
 void CNN_freeClsfier(Classify_T *cls) {

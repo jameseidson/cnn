@@ -6,7 +6,7 @@ typedef struct Data {
   size_t num;
   size_t hgt;
   size_t wid;
-  size_t *lbls; /* must be stored in device memory */
+  size_t *lbls; /* must be stored in host memory */
   double *imgs; /* must be stored in device memory */ /* 4d array: num * hgt * wid * colors (r, g, b) */
 } Data_T;
 

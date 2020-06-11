@@ -10,6 +10,7 @@
 #include <stdbool.h>
 
 const uint8_t NUM_LYR_TYPE = 5;
+
 typedef enum LayerT {
   NET,
   CONVOLUTIONAL,

@@ -1,7 +1,10 @@
 #include "net.h"
 
-#define SIG(x) 1.0f/(1.0f + exp(-x))
-#define DSIG(x) SIG(x) * (1 - SIG(X))
+#define SIG(x) (1.0f/(1.0f + exp(-x)))
+#define DSIG(x) (x * (1 - x))
+
+#define SE(tru, act) (0.5f * (tru - act) * (tru - act))
+#define DSE(tru, act) (-(tru - act))
 
 __global__ void CNN_prepNet(Net_T *net, double *imgs, size_t num, size_t hgt, size_t wid) {
   size_t i = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
@@ -47,7 +50,7 @@ __global__ void CNN_convolve(Net_T *net, Features_T *kern, double *buf) {
     }
   }
 
-  /* kernel launches are costly, so it's best to reiterate prepData rather than call it, especially since we
+  /* kernel launches are costly, so it's best to reiterate prepNet rather than call it, especially since we
      already have the right amount of threads */
   __syncthreads();
   if (x == gridDim.x * BLKS_3D - 1 && y == gridDim.y * BLKS_3D - 1 && z == gridDim.z * BLKS_3D - 1) {
@@ -114,18 +117,75 @@ __global__ void CNN_pool(Net_T *net, Pool_T *pool, double *buf) {
   }
 }
 
-__global__ void CNN_feedForward(Classify_T *cls) {
+__global__ void CNN_softmax_fwd(Classify_T *cls) {
   for (size_t i = 1; i < cls->numLyr; i++) {
-    size_t numNrn = (i == cls->numLyr - 1) ? cls->topo[i] : cls->topo[i] - 1;
     size_t prevLyr = i - 1;
-    for (size_t j = 0; j < numNrn; j++) {
+    for (size_t j = 0; j < cls->wgtTopo[prevLyr]; j++) {
       double sum = 0;
       for (size_t k = 0; k < cls->topo[prevLyr]; k++) {
-        sum += cls->wgts[FLAT3D(prevLyr, k, j, cls->topo[prevLyr], numNrn)]
+        sum += cls->wgts[FLAT3D(prevLyr, k, j, cls->topo[prevLyr], cls->wgtTopo[prevLyr])]
              * cls->activs[FLAT2D(prevLyr, k, cls->topo[prevLyr])];
       }
-      cls->activs[FLAT2D(i, j, numNrn)] = SIG(sum);
+      cls->activs[FLAT2D(i, j, cls->wgtTopo[prevLyr])] = SIG(sum);
     }
+  }
+}
+
+__global__ void CNN_softmax_bck(Classify_T *cls, size_t lbl) {
+  size_t lastLyr = cls->numLyr - 1;
+
+  for (size_t i = 0; i < cls->topo[lastLyr]; i++) {
+    size_t nrnIdx = FLAT2D(lastLyr, i, cls->topo[lastLyr]);
+    double truth = (double)i == lbl;
+    cls->errs[i] = DSE(truth, cls->activs[nrnIdx]);
+  }
+
+  for (size_t i = lastLyr; i-- > 0;) {
+    for (size_t j = 0; j < cls->topo[i]; j++) {
+      size_t nxtLyr = i + 1;
+      double dNxtErr = 0;
+      for (size_t k = 0; k < cls->wgtTopo[i]; k++) {
+        size_t wgtIdx = FLAT3D(i, j, k, cls->topo[i], cls->wgtTopo[i]);
+
+        double dCurErr = cls->errs[k] * DSIG(cls->activs[FLAT2D(nxtLyr, k, cls->topo[nxtLyr])]);
+        cls->wgtBuf[wgtIdx] = cls->wgts[wgtIdx] - (cls->lrnRate * dCurErr * cls->activs[FLAT2D(i, j, cls->topo[i])]);
+        dNxtErr += dCurErr * cls->wgts[wgtIdx];
+      }
+      cls->errBuf[j] = dNxtErr;
+    }
+    for (size_t j = 0; j < cls->topo[i]; j++) {
+      cls->errs[j] = cls->errBuf[j];
+    }
+  }
+
+  for (size_t i = 0; i < cls->totalWgt; i++) {
+    cls->wgts[i] = cls->wgtBuf[i];
+  }
+}
+
+__global__ void CNN_getOut(Classify_T *cls, double *out) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t lastLyr = cls->numLyr - 1;
+  size_t numOut = cls->topo[lastLyr];
+
+  if (x < numOut) {
+    out[x] = cls->activs[FLAT2D(lastLyr, x, numOut)];
+  }
+}
+
+__global__ void CNN_getErr(Classify_T *cls, size_t lbl, double *err) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t lastLyr = cls->numLyr - 1;
+
+  if (x == 0) {
+    *err = 0.0f;
+  }
+  __syncthreads();
+
+  if (x < cls->topo[lastLyr]) {
+    double truth = (double)x == lbl;
+    printf("[%lu]: %f\n", x, cls->activs[FLAT2D(lastLyr, x, cls->topo[lastLyr])]);
+    *err += SE(truth, cls->activs[FLAT2D(lastLyr, x, cls->topo[lastLyr])]);
   }
 }
 

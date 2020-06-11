@@ -13,14 +13,14 @@
 #define GRN 1
 #define BLU 2
 
-#define FLAT2D(i, j, max_j) (i * max_j) + j 
-#define FLAT3D(i, j, k, max_j, max_k) (i * max_j * max_k) + (j * max_k) + k
-#define FLAT4D(i, j, k, l, max_j, max_k, max_l) (i * max_j * max_k * max_l) + (j * max_k * max_l) + (k * max_l) + l
+#define FLAT2D(i, j, max_j) ((i * max_j) + j)
+#define FLAT3D(i, j, k, max_j, max_k) ((i * max_j * max_k) + (j * max_k) + k)
+#define FLAT4D(i, j, k, l, max_j, max_k, max_l) ((i * max_j * max_k * max_l) + (j * max_k * max_l) + (k * max_l) + l)
 
-#define I_IDX(idx, j, k, l, max_i, max_j, max_k, max_l) ((idx - j * max_k * max_l - k * max_l - l) / (max_l * max_k * max_j)) % max_i
-#define J_IDX(idx, k, l, max_j, max_k, max_l) ((idx - k * max_l - l) / (max_l * max_k)) % max_j
-#define K_IDX(idx, l, max_k, max_l) ((idx - l) / max_l) % max_k
-#define L_IDX(idx, max_l) idx % max_l
+#define I_IDX(idx, j, k, l, max_i, max_j, max_k, max_l) (((idx - j * max_k * max_l - k * max_l - l) / (max_l * max_k * max_j)) % max_i)
+#define J_IDX(idx, k, l, max_j, max_k, max_l) (((idx - k * max_l - l) / (max_l * max_k)) % max_j)
+#define K_IDX(idx, l, max_k, max_l) (((idx - l) / max_l) % max_k)
+#define L_IDX(idx, max_l) (idx % max_l)
 
 #define NUMBLK(dim, blkSize) (dim / blkSize) + 1
 
@@ -45,11 +45,18 @@ typedef struct Pool {
 
 typedef struct Classify {
   size_t numLyr;
-  size_t maxNrn;
+  double lrnRate;
+  size_t totalWgt;
+
   size_t *topo;
+  size_t *wgtTopo;
+
   double *activs; /* 2d arr: netSize * nrnsPerLyr */
   double *wgts; /* 3d arr: netSize * nrnsPerLyr * wgtsPerNrn */
-  double lrnRate;
+  double *errs; /* 1d arr: maxNrn */
+
+  double *errBuf; /* 1d arr: maxNrn */
+  double *wgtBuf; /* 3d arr: netSize * nrnsPerLyr * wgtsPerNrn */
 } Classify_T;
 
 

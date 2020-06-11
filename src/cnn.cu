@@ -1,16 +1,23 @@
 #include "../include/cnn.h"
-#include "../include/data.h"
 
 #define INIT 0
 #define FIN 1
 
 struct CNN {
-  size_t numLyr;
   size_t hgt[2];
   size_t wid[2];
   size_t numImg[2];
   size_t numOut;
+
+  size_t maxPxls;
+  dim3 grdSize;
+  dim3 blkSize;
+
+  double *imgBuf;
+  double *outBuf;
   Net_T *net;
+
+  size_t numLyr;
   LayerT_T *ltypes;
   void **lyrs;
 };
@@ -31,6 +38,8 @@ typedef enum NetErr {
   NO_ERROR
 } NetErr_T;
 
+void forward(CNN_T *cnn);
+void backward(CNN_T *cnn, size_t lbl);
 static inline void haltErr(CNN_T *, TokenList_T *, NetErr_T, size_t);
 void netErr(NetErr_T, size_t);
 CNN_T *readNet(TokenList_T **, TokenList_T *);
@@ -41,10 +50,11 @@ CNN_T *CNN_init(FILE *config, Data_T *data) {
   TokenList_T *head = lex(config);
   TokenList_T *i = head;
   CNN_T *cnn = readNet(&i, head);
+  cnn->net = NULL;
+  cnn->imgBuf = NULL;
   cnn->hgt[INIT] = cnn->hgt[FIN] = data->hgt;
   cnn->wid[INIT] = cnn->wid[FIN] = data->wid;
-  cnn->numImg[INIT] = 1;
-  cnn->numImg[FIN] = 1;
+  cnn->numImg[INIT] = cnn->numImg[FIN] = 1;
 
   size_t lyrIdx = 0;
   i = i->next;
@@ -75,57 +85,59 @@ CNN_T *CNN_init(FILE *config, Data_T *data) {
   freeTokens(head);
 
   cnn->net = CNN_initNet(cnn->numImg[FIN], data->hgt, data->wid);
+
+  cnn->maxPxls = cnn->numImg[FIN] * cnn->hgt[INIT] * cnn->wid[INIT] * NUM_CHNL;
+  cudaMalloc((void **)&cnn->imgBuf, cnn->maxPxls * sizeof(double));
+
+  dim3 blkSize(BLKS_3D, BLKS_3D, BLKS_3D);
+  dim3 grdSize(NUMBLK(cnn->numImg[FIN], BLKS_3D), NUMBLK(cnn->hgt[INIT], BLKS_3D), NUMBLK(cnn->wid[INIT], BLKS_3D));
+  cnn->blkSize = blkSize;
+  cnn->grdSize = grdSize;
   return cnn;
 }
 
-double *CNN_feed(CNN_T *cnn, double *image/*, double **out*/) {
+void CNN_classify(CNN_T *cnn, double *image, double *out) {
+  Classify_T *cls = (Classify_T *)cnn->lyrs[cnn->numLyr - 1];
   size_t netPxls = cnn->numImg[INIT] * cnn->hgt[INIT] * cnn->wid[INIT] * NUM_CHNL;
+  size_t outBytes = cnn->numOut * sizeof(double);
+  double *outBuf;
+  cudaMalloc((void **)&outBuf, outBytes);
+
   CNN_prepNet<<<NUMBLK(netPxls, BLKS_1D), BLKS_1D>>>(cnn->net, image, cnn->numImg[INIT], cnn->hgt[INIT], cnn->wid[INIT]);
   cudaDeviceSynchronize();
 
-  size_t maxPxls = cnn->numImg[FIN] * cnn->hgt[INIT] * cnn->wid[INIT] * NUM_CHNL;
-  double *buf;
-  cudaMalloc((void **)&buf, maxPxls * sizeof(double));
+  forward(cnn);
 
-  /* kernel launch dimensions are a wide upper bound, consider tightening */
-  dim3 blkSize(BLKS_3D, BLKS_3D, BLKS_3D);
-  dim3 grdSize(NUMBLK(cnn->numImg[FIN], BLKS_3D), NUMBLK(cnn->hgt[INIT], BLKS_3D), NUMBLK(cnn->wid[INIT], BLKS_3D));
-
-  for (size_t i = 0; i < cnn->numLyr; i++) {
-    switch (cnn->ltypes[i]) {
-      case CONVOLUTIONAL: {
-        Features_T *curKern = (Features_T *)cnn->lyrs[i];
-
-        CNN_convolve<<<grdSize, blkSize>>>(cnn->net, curKern, buf);
-        cudaDeviceSynchronize();
-        break;
-      } case POOLING: {
-        Pool_T *curPool = (Pool_T *)cnn->lyrs[i];
-
-        CNN_pool<<<grdSize, blkSize>>>(cnn->net, curPool, buf);
-        cudaDeviceSynchronize();
-        break;
-      } case NORMALIZATION: {
-
-        CNN_normalize<<<NUMBLK(maxPxls, BLKS_1D), BLKS_1D>>>(cnn->net);
-        cudaDeviceSynchronize();
-        break;
-      } case FULLY_CONNECTED: {
-        Classify_T *cls = (Classify_T *)cnn->lyrs[i];
-
-        CNN_feedForward<<<1, 1>>>(cls);
-        cudaDeviceSynchronize();
-        break;
-      }
-    }
-  }
-  cudaFree(buf);
-
-  return NULL;
+  CNN_getOut<<<NUMBLK(cnn->numOut, BLKS_1D), BLKS_1D>>>(cls, outBuf);
+  cudaMemcpy(out, outBuf, outBytes, cudaMemcpyDeviceToHost);
 }
 
+
 void CNN_train(CNN_T *cnn, Data_T *data) {
-  /*TODO*/
+  size_t netPxls = cnn->numImg[INIT] * cnn->hgt[INIT] * cnn->wid[INIT] * NUM_CHNL;
+  size_t dataPxls = data->hgt * data->wid * NUM_CHNL;
+  Classify_T *cls = (Classify_T *)cnn->lyrs[cnn->numLyr - 1];
+  double *err_d;
+  cudaMalloc((void **)&err_d, sizeof(double));
+
+  for (size_t i = 0; i < data->numEpoch; i++) {
+    double errSum = 0;
+    for (size_t j = 0; j < data->num; j++) {
+      CNN_prepNet<<<NUMBLK(netPxls, BLKS_1D), BLKS_1D>>>(cnn->net, &data->imgs[j * dataPxls], 1, data->hgt, data->wid);
+      cudaDeviceSynchronize();
+      forward(cnn);
+      backward(cnn, data->lbls[j]);
+
+      double err_h = 0.0f;
+      CNN_getErr<<<NUMBLK(cnn->numOut, BLKS_1D), BLKS_1D>>>(cls, data->lbls[j], err_d);
+      cudaMemcpy(&err_h, err_d, sizeof(double), cudaMemcpyDeviceToHost);
+      errSum += err_h;
+      cudaDeviceSynchronize();
+    }
+    printf("Average Error for Epoch %lu: %f\n", i, errSum / (double)data->num);
+  }
+
+  cudaFree(err_d);
 }
 
 void CNN_free(CNN_T *cnn) {
@@ -148,9 +160,75 @@ void CNN_free(CNN_T *cnn) {
   if (cnn->net) {
     CNN_freeNet(cnn->net);
   }
+  if (cnn->imgBuf) {
+    cudaFree(cnn->imgBuf);
+  } 
+
   free(cnn->lyrs);
   free(cnn->ltypes);
   free(cnn);
+}
+
+void forward(CNN_T *cnn) {
+  for (size_t i = 0; i < cnn->numLyr; i++) {
+    switch (cnn->ltypes[i]) {
+      case CONVOLUTIONAL: {
+        Features_T *kern = (Features_T *)cnn->lyrs[i];
+
+        CNN_convolve<<<cnn->grdSize, cnn->blkSize>>>(cnn->net, kern, cnn->imgBuf);
+        cudaDeviceSynchronize();
+        break;
+      } case POOLING: {
+        Pool_T *pool = (Pool_T *)cnn->lyrs[i];
+
+        CNN_pool<<<cnn->grdSize, cnn->blkSize>>>(cnn->net, pool, cnn->imgBuf);
+        cudaDeviceSynchronize();
+        break;
+      } case NORMALIZATION: {
+
+        CNN_normalize<<<NUMBLK(cnn->maxPxls, BLKS_1D), BLKS_1D>>>(cnn->net);
+        cudaDeviceSynchronize();
+        break;
+      } case FULLY_CONNECTED: {
+        Classify_T *cls = (Classify_T *)cnn->lyrs[i];
+
+        CNN_softmax_fwd<<<1, 1>>>(cls);
+        cudaDeviceSynchronize();
+        break;
+      }
+    }
+  }
+}
+
+void backward(CNN_T *cnn, size_t lbl) {
+  for (size_t i = cnn->numLyr; i-- > 0;) {
+    switch (cnn->ltypes[i]) {
+      case CONVOLUTIONAL: {
+        Features_T *kern = (Features_T *)cnn->lyrs[i];
+        /* TODO */
+
+        cudaDeviceSynchronize();
+        break;
+      } case POOLING: {
+        Pool_T *pool = (Pool_T *)cnn->lyrs[i];
+        /* TODO */
+
+        cudaDeviceSynchronize();
+        break;
+      } case NORMALIZATION: {
+        /* TODO */
+
+        cudaDeviceSynchronize();
+        break;
+      } case FULLY_CONNECTED: {
+        Classify_T *cls = (Classify_T *)cnn->lyrs[i];
+
+        CNN_softmax_bck<<<1, 1>>>(cls, lbl);
+        cudaDeviceSynchronize();
+        break;
+      }
+    }
+  }
 }
 
 static inline void haltErr(CNN_T *cnn, TokenList_T *head, NetErr_T errType, size_t lineNum) {
@@ -175,7 +253,7 @@ void netErr(NetErr_T errType, size_t lineNum) {
       printf("expected an integer\n");
       break;
     case FLOAT_EXPECTED:
-      printf("expected a floating point valye\n");
+      printf("expected a floating point value\n");
       break;
     case LYR_EXPECTED:
       printf("expected a layer type\n");
@@ -207,7 +285,7 @@ void netErr(NetErr_T errType, size_t lineNum) {
 }
 
 CNN_T *readNet(TokenList_T **ip, TokenList_T *head) {
-  TokenList *i = *ip;
+  TokenList_T *i = *ip;
   if (!i || i->token != LYR_TYPE || i->val.ltype != NET) {
     freeTokens(head);
     netErr(NET_FIRST, i->lineNum);
@@ -238,8 +316,8 @@ CNN_T *readNet(TokenList_T **ip, TokenList_T *head) {
   return cnn;
 }
 
-NetErr_T readLayer(CNN_T *cnn, TokenList **ip, size_t lyrIdx) {
-  TokenList *i = *ip;
+NetErr_T readLayer(CNN_T *cnn, TokenList_T **ip, size_t lyrIdx) {
+  TokenList_T *i = *ip;
   switch(i->val.ltype) {
     case NET: {
       return NET_REDEF;
@@ -338,8 +416,8 @@ NetErr_T readLayer(CNN_T *cnn, TokenList **ip, size_t lyrIdx) {
   return NO_ERROR;
 }
 
-NetErr_T readClsfier(CNN_T *cnn, TokenList **ip, size_t lyrIdx, Data_T *data) {
-  TokenList *i = *ip;
+NetErr_T readClsfier(CNN_T *cnn, TokenList_T **ip, size_t lyrIdx, Data_T *data) {
+  TokenList_T *i = *ip;
   double lrnRate = 0.0f;
   size_t numHidden = 0;
   size_t numOut = 0;
@@ -410,7 +488,7 @@ NetErr_T readClsfier(CNN_T *cnn, TokenList **ip, size_t lyrIdx, Data_T *data) {
         break;
     }
   }
-  if (hiddens == NULL || lrnRate == 0.0f || numOut == 0) {
+  if (!hiddens || lrnRate == 0.0f || numOut == 0) {
     return MISSING_KEY;
   }
 
