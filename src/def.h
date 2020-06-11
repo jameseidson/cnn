@@ -26,6 +26,7 @@
 
 static const uint8_t NUM_CHNL = 3;
 static const uint16_t BLKS_1D = 256;
+static const uint16_t BLKS_2D = 16;
 static const uint8_t BLKS_3D = 8;
 
 struct ImgList {

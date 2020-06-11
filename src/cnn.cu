@@ -8,8 +8,6 @@ struct CNN {
   size_t wid[2];
   size_t numImg[2];
   size_t numOut;
-
-  size_t maxPxls;
   dim3 grdSize;
   dim3 blkSize;
 
@@ -45,6 +43,7 @@ void netErr(NetErr_T, size_t);
 CNN_T *readNet(TokenList_T **, TokenList_T *);
 NetErr_T readLayer(CNN_T *, TokenList **, size_t);
 NetErr_T readClsfier(CNN_T *, TokenList **, size_t, Data_T *);
+size_t findMax(size_t *, size_t);
 
 CNN_T *CNN_init(FILE *config, Data_T *data) {
   TokenList_T *head = lex(config);
@@ -85,9 +84,6 @@ CNN_T *CNN_init(FILE *config, Data_T *data) {
   freeTokens(head);
 
   cnn->net = CNN_initNet(cnn->numImg[FIN], data->hgt, data->wid);
-
-  cnn->maxPxls = cnn->numImg[FIN] * cnn->hgt[INIT] * cnn->wid[INIT] * NUM_CHNL;
-  cudaMalloc((void **)&cnn->imgBuf, cnn->maxPxls * sizeof(double));
 
   dim3 blkSize(BLKS_3D, BLKS_3D, BLKS_3D);
   dim3 grdSize(NUMBLK(cnn->numImg[FIN], BLKS_3D), NUMBLK(cnn->hgt[INIT], BLKS_3D), NUMBLK(cnn->wid[INIT], BLKS_3D));
@@ -134,7 +130,7 @@ void CNN_train(CNN_T *cnn, Data_T *data) {
       errSum += err_h;
       cudaDeviceSynchronize();
     }
-    printf("Average Error for Epoch %lu: %f\n", i, errSum / (double)data->num);
+    printf("Average Error of Epoch %lu: %f\n", i, errSum / (double)data->num);
   }
 
   cudaFree(err_d);
@@ -186,7 +182,8 @@ void forward(CNN_T *cnn) {
         break;
       } case NORMALIZATION: {
 
-        CNN_normalize<<<NUMBLK(cnn->maxPxls, BLKS_1D), BLKS_1D>>>(cnn->net);
+        size_t maxPxls = cnn->numImg[FIN] * cnn->hgt[INIT] * cnn->wid[INIT] * NUM_CHNL;
+        CNN_normalize<<<NUMBLK(maxPxls, BLKS_1D), BLKS_1D>>>(cnn->net);
         cudaDeviceSynchronize();
         break;
       } case FULLY_CONNECTED: {
@@ -495,6 +492,7 @@ NetErr_T readClsfier(CNN_T *cnn, TokenList_T **ip, size_t lyrIdx, Data_T *data) 
   size_t numLyr = numHidden + 2;
   size_t *topo = (size_t *)malloc(numLyr * sizeof(size_t));
   assert(topo);
+
 
   for (size_t j = 0; j < numHidden; j++) {
     topo[j + 1] = hiddens[j];
