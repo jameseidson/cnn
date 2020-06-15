@@ -18,7 +18,7 @@ typedef enum LayerT {
   NORMALIZATION,
   FULLY_CONNECTED,
   INVALID_LYR
-} LayerT_T;
+} Layer_T;
 
 const uint8_t NUM_KEY = 10;
 typedef enum Key {
@@ -54,7 +54,7 @@ typedef enum Token {
 typedef union TokenVal {
   size_t ival;
   double fval;
-  LayerT_T ltype;
+  Layer_T ltype;
   Key_T key;
 } TokenVal_T;
 

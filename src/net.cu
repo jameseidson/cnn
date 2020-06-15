@@ -1,254 +1,128 @@
 #include "net.h"
 
-#define SIG(x) (1.0f/(1.0f + exp(-x)))
-#define DSIG(x) (x * (1 - x))
-
-#define SE(tru, act) (0.5f * (tru - act) * (tru - act))
-#define DSE(tru, act) (-(tru - act))
-
-__global__ void CNN_prepNet(Net_T *net, double *imgs, size_t num, size_t hgt, size_t wid) {
-  size_t i = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
-  if (i == gridDim.x * BLKS_1D - 1) { /* last thread is least likely to be doing any work */
-    net->num = num;
-    net->hgt = hgt;
-    net->wid = wid;
+__global__ void CNN_prepFwd(Forward_T *fwd, double *imgs, size_t num, size_t rows, size_t cols) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  if (x == gridDim.x * BLKS_1D - 1) {
+    fwd->num = num;
+    fwd->rows = rows;
+    fwd->cols = cols;
   }
 
-  if (i < num * hgt * wid * NUM_CHNL) {
-    net->imgs[i] = imgs[i];
+  if (x < num) {
+    size_t numElm = num * rows * cols * NUM_CHNL;
+    size_t idx = x * rows * cols * NUM_CHNL;
+    MAT_assign<<<NUMBLK((numElm), BLKS_1D), BLKS_1D>>>(&imgs[idx], &fwd->mats[idx], numElm);
   }
 }
 
-__global__ void CNN_convolve(Net_T *net, Features_T *kern, double *buf) {
+__global__ void CNN_convolve(Forward_T *fwd, Features_T *kern, double *buf) {
   size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
   size_t y = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
-  size_t z = FLAT2D(blockIdx.z, threadIdx.z, blockDim.z);
 
-  size_t kernPxls = kern->hgt * kern->wid;
+  size_t oRows = fwd->rows - kern->rows + 1;
+  size_t oCols = fwd->cols - kern->cols + 1;
+  size_t oMatSize = oRows * oCols * NUM_CHNL;
 
-  size_t outNum = net->num * kern->num;
-  size_t outHgt = net->hgt - kern->hgt + 1;
-  size_t outWid = net->wid - kern->wid + 1;
-  
-  if (x < outNum && y < outHgt && z < outWid) {
-    size_t x_n = L_IDX(x, net->num);
-    size_t x_k = K_IDX(x, x_n, kern->num, net->num); 
+  if (x < fwd->num && y < kern->num) {
+    size_t i = x * fwd->rows * fwd->cols * NUM_CHNL;
+    size_t j = FLAT2D(x, y, kern->num) * oMatSize;
+    size_t k = y * kern->rows * kern->cols * NUM_CHNL;
 
-    double chnlTotal[NUM_CHNL] = { 0.0f, 0.0f, 0.0f };
-    for (size_t i = y; i - y < kern->hgt; i++) {
-      for (size_t j = z; j - z < kern->wid; j++) {
-        for (size_t k = 0; k < NUM_CHNL; k++) {
-
-          chnlTotal[k] += net->imgs[FLAT4D(x_n, i, j, k, net->hgt, net->wid, NUM_CHNL)] * 
-                    kern->imgs[FLAT4D(x_k, (i - y), (j - z), k, kern->hgt, kern->wid, NUM_CHNL)];
-        }
-      }
-    }
-
-    for (size_t i = 0; i < NUM_CHNL; i++) {
-      buf[FLAT4D(x, y, z, i, outHgt, outWid, NUM_CHNL)] = chnlTotal[i] / kernPxls;
-    }
-  }
-
-  /* kernel launches are costly, so it's best to reiterate prepNet rather than call it, especially since we
-     already have the right amount of threads */
-  __syncthreads();
-  if (x == gridDim.x * BLKS_3D - 1 && y == gridDim.y * BLKS_3D - 1 && z == gridDim.z * BLKS_3D - 1) {
-    net->num = outNum;
-    net->hgt = outHgt;
-    net->wid = outWid;
-  }
-  if (x < outNum && y < outHgt && z < outWid) {
-    for (size_t i = 0; i < NUM_CHNL; i++) {
-      size_t idx = FLAT4D(x, y, z, i, outHgt, outWid, NUM_CHNL);
-      net->imgs[idx] = buf[idx];
-    }
-  }
-}
-
-__global__ void CNN_normalize(Net_T *net) {
-  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
-  if (x < net->num * net->hgt * net->wid * NUM_CHNL && net->imgs[x] < 0) {
-    net->imgs[x] = 0;
-  }
-}
-
-__global__ void CNN_pool(Net_T *net, Pool_T *pool, double *buf) {
-  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
-  size_t y = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
-  size_t z = FLAT2D(blockIdx.z, threadIdx.z, blockDim.z);
-
-  size_t hgt = net->hgt;
-  size_t wid = net->wid;
-  size_t outHgt = ((hgt - pool->winDim) / pool->stride) + 1;
-  size_t outWid = ((wid - pool->winDim) / pool->stride) + 1;
-
-  if (x < net->num && y < outHgt && z < outWid) {
-    double chnlMax[NUM_CHNL] = { DBL_MIN, DBL_MIN, DBL_MIN };
-
-    for (size_t i = 0; i < pool->winDim; i++) {
-      for (size_t j = 0; j < pool->winDim; j++) {
-        size_t i_n = y * pool->stride + i;
-        size_t j_n = z * pool->stride + j;
-        for (size_t k = 0; k < NUM_CHNL; k++) {
-          double curPxl = net->imgs[FLAT4D(x, i_n, j_n, k, hgt, wid, NUM_CHNL)];
-          if (curPxl > chnlMax[k]) {
-            chnlMax[k] = curPxl;
-          }
-        }
-      }
-    }
-
-    for (size_t i = 0; i < NUM_CHNL; i++) {
-      buf[FLAT4D(x, y, z, i, outHgt, outWid, NUM_CHNL)] = chnlMax[i];
-    }
+    dim3 grdSize(NUMBLK(oRows, BLKS_2D), NUMBLK(oCols, BLKS_2D));
+    dim3 blkSize(BLKS_2D, BLKS_2D);
+    MAT_convolve<<<grdSize, blkSize>>>(&fwd->mats[i], &buf[j], &kern->mats[k], fwd->rows, fwd->cols, kern->rows, kern->cols);
   }
 
   __syncthreads();
-  if (x == gridDim.x * BLKS_3D - 1 && y == gridDim.y * BLKS_3D - 1 && z == gridDim.z * BLKS_3D - 1) {
-    net->hgt = outHgt;
-    net->wid = outWid;
-  }
-  if (x < net->num && y < outHgt && z < outWid) {
-    for (size_t i = 0; i < NUM_CHNL; i++) {
-      size_t idx = FLAT4D(x, y, z, i, outHgt, outWid, NUM_CHNL);
-      net->imgs[idx] = buf[idx];
-    }
+  if (x < fwd->num && y < kern->num) {
+    size_t i = FLAT2D(x, y, kern->num) * oMatSize;
+    MAT_assign<<<NUMBLK(oMatSize, BLKS_1D), BLKS_1D>>>(&buf[i], &fwd->mats[i], oMatSize);
   }
 }
 
-__global__ void CNN_softmax_fwd(Classify_T *cls) {
-  for (size_t i = 1; i < cls->numLyr; i++) {
-    size_t prevLyr = i - 1;
-    for (size_t j = 0; j < cls->wgtTopo[prevLyr]; j++) {
-      double sum = 0;
-      for (size_t k = 0; k < cls->topo[prevLyr]; k++) {
-        sum += cls->wgts[FLAT3D(prevLyr, k, j, cls->topo[prevLyr], cls->wgtTopo[prevLyr])]
-             * cls->activs[FLAT2D(prevLyr, k, cls->topo[prevLyr])];
-      }
-      cls->activs[FLAT2D(i, j, cls->wgtTopo[prevLyr])] = SIG(sum);
-    }
+__global__ void CNN_pool(Pool_T *pool, Forward_T *fwd, double *buf) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+
+  size_t oCols = ((fwd->cols - pool->dim) / pool->stride) + 1;
+  size_t oRows = ((fwd->cols - pool->dim) / pool->stride) + 1;
+
+  if (x < fwd->num) {
+    size_t i = x * fwd->rows * fwd->cols * NUM_CHNL;
+
+    dim3 grdSize(NUMBLK(oRows, BLKS_2D), NUMBLK(oCols, BLKS_2D));
+    dim3 blkSize(BLKS_2D, BLKS_2D);
+    MAT_pool<<<grdSize, blkSize>>>(&fwd->mats[i], &buf[i], fwd->rows, fwd->cols, pool->dim, pool->stride);
+  }
+
+  __syncthreads();
+  if (x < fwd->num) {
+    size_t matSize = oRows * oCols * NUM_CHNL;
+    size_t i = x * matSize;
+    MAT_assign<<<NUMBLK(matSize, BLKS_1D), BLKS_1D>>>(&buf[i], &fwd->mats[i], matSize);
   }
 }
 
-__global__ void CNN_softmax_bck(Classify_T *cls, size_t lbl) {
-  size_t lastLyr = cls->numLyr - 1;
+__global__ void CNN_normalize(Forward_T *fwd, NonLin_T func) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
 
-  for (size_t i = 0; i < cls->topo[lastLyr]; i++) {
-    size_t nrnIdx = FLAT2D(lastLyr, i, cls->topo[lastLyr]);
-    double truth = (double)i == lbl;
-    cls->errs[i] = DSE(truth, cls->activs[nrnIdx]);
+  void (*nonLin)(double *, double *, size_t) = (func == RELU) ? &MAT_ReLU : &MAT_sigmoid;
+  size_t matSize = fwd->rows * fwd->cols * NUM_CHNL;
+
+  if (x < fwd->num) {
+    size_t i = x * matSize;
+    nonLin<<<NUMBLK(matSize, BLKS_1D), BLKS_1D>>>(&fwd->mats[i], &fwd->mats[i], matSize);
   }
+}
+
+__global__ void CNN_softmax_fwd(Softmax_T *sm, Forward_T *fwd) {
+  size_t lastLyr = sm->numLyr - 1;
+
+  MAT_assign<<<NUMBLK(sm->aTopo[0] - 1, BLKS_1D), BLKS_1D>>>(fwd->mats, sm->activs, sm->aTopo[0] - 1);
+  cudaDeviceSynchronize();
+
+  for (size_t i = 0; i < lastLyr; i++) {
+    MAT_fwdProp<<<NUMBLK(sm->wTopo[i], BLKS_1D), BLKS_1D>>>
+      (&sm->wgts[sm->wIdx[i]], &sm->activs[sm->aIdx[i]], &sm->activs[sm->aIdx[i + 1]], sm->wTopo[i], sm->aTopo[i], sm->fType);
+    cudaDeviceSynchronize();
+  }
+}
+
+__global__ void CNN_softmax_loss(Softmax_T *sm, size_t lbl, double *loss) {
+  size_t lastLyr = sm->numLyr - 1;
+
+  MAT_loss<<<NUMBLK(sm->aTopo[lastLyr], BLKS_1D), BLKS_1D>>>(&sm->activs[sm->aIdx[lastLyr]], sm->aTopo[lastLyr], lbl, loss);
+}
+
+__global__ void CNN_softmax_cpyOut(Softmax_T *sm, double *output) {
+  size_t lastLyr = sm->numLyr - 1;
+
+  MAT_assign<<<NUMBLK(sm->aTopo[lastLyr], BLKS_1D), BLKS_1D>>>(&sm->activs[sm->aIdx[lastLyr]], output, sm->aTopo[lastLyr]);
+}
+
+__global__ void CNN_softmax_gradDescent(Softmax_T *sm) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t lastLyr = sm->numLyr - 1;
+
+  if (x < lastLyr) {
+      dim3 grdSize(NUMBLK(sm->wTopo[x], BLKS_2D), NUMBLK(sm->aTopo[x], BLKS_2D));
+      dim3 blkSize(BLKS_2D, BLKS_2D);
+      MAT_applyGradient<<<grdSize, blkSize>>>(&sm->activs[sm->aIdx[x]], &sm->deltas[sm->aIdx[x + 1]], &sm->wgts[sm->wIdx[x]], sm->wTopo[x], sm->aTopo[x], sm->lrnRate);
+  }
+}
+
+__global__ void CNN_softmax_back(Softmax_T *sm, size_t lbl) {
+  size_t lastLyr = sm->numLyr - 1;
+
+  MAT_deltas_out<<<NUMBLK(sm->aTopo[lastLyr], BLKS_1D), BLKS_1D>>>
+    (&sm->activs[sm->aIdx[lastLyr]], &sm->deltas[sm->aIdx[lastLyr]], sm->aTopo[lastLyr], lbl, sm->fType);
 
   for (size_t i = lastLyr; i-- > 0;) {
-    for (size_t j = 0; j < cls->topo[i]; j++) {
-      size_t nxtLyr = i + 1;
-      double dNxtErr = 0;
-      for (size_t k = 0; k < cls->wgtTopo[i]; k++) {
-        size_t wgtIdx = FLAT3D(i, j, k, cls->topo[i], cls->wgtTopo[i]);
-
-        double dCurErr = cls->errs[k] * DSIG(cls->activs[FLAT2D(nxtLyr, k, cls->topo[nxtLyr])]);
-        cls->wgtBuf[wgtIdx] = cls->wgts[wgtIdx] - (cls->lrnRate * dCurErr * cls->activs[FLAT2D(i, j, cls->topo[i])]);
-        dNxtErr += dCurErr * cls->wgts[wgtIdx];
-      }
-      cls->errBuf[j] = dNxtErr;
-    }
-    for (size_t j = 0; j < cls->topo[i]; j++) {
-      cls->errs[j] = cls->errBuf[j];
-    }
+    MAT_deltas_hidden<<<NUMBLK(sm->aTopo[i], BLKS_1D), BLKS_1D>>>
+      (&sm->activs[sm->aIdx[i]], &sm->deltas[sm->aIdx[i]], &sm->wgts[sm->wIdx[i]], &sm->deltas[sm->aIdx[i + 1]], sm->wTopo[i], sm->aTopo[i], sm->fType);
+    cudaDeviceSynchronize();
   }
 
-  for (size_t i = 0; i < cls->totalWgt; i++) {
-    cls->wgts[i] = cls->wgtBuf[i];
-  }
-}
-
-__global__ void CNN_getOut(Classify_T *cls, double *out) {
-  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
-  size_t lastLyr = cls->numLyr - 1;
-  size_t numOut = cls->topo[lastLyr];
-
-  if (x < numOut) {
-    out[x] = cls->activs[FLAT2D(lastLyr, x, numOut)];
-  }
-}
-
-__global__ void CNN_getErr(Classify_T *cls, size_t lbl, double *err) {
-  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
-  size_t lastLyr = cls->numLyr - 1;
-
-  if (x == 0) {
-    *err = 0.0f;
-  }
-  __syncthreads();
-
-  if (x < cls->topo[lastLyr]) {
-    double truth = (double)x == lbl;
-    printf("[%lu]: %f\n", x, cls->activs[FLAT2D(lastLyr, x, cls->topo[lastLyr])]);
-    *err += SE(truth, cls->activs[FLAT2D(lastLyr, x, cls->topo[lastLyr])]);
-  }
-}
-
-__global__ void CNN_testNet(Net_T *net) {
-  printf("Num features: %lu\n", net->num);
-  printf("Feature wid: %lu\n", net->hgt);
-  printf("Feature Hgt: %lu\n", net->wid);
-
-  for (size_t i = 0; i < net->num; i++) {
-    printf("Printing convolved feature #%lu:\n", i);
-    printf("Red Channel:\n");
-    for (size_t j = 0; j < net->hgt; j++) {
-      for (size_t k = 0; k < net->wid; k++) {
-        printf("%0.3f ", net->imgs[FLAT4D(i, j, k, 0, net->hgt, net->wid, NUM_CHNL)]);
-      }
-      printf("\n");
-    }
-
-    printf("Green Channel:\n");
-    for (size_t j = 0; j < net->hgt; j++) {
-      for (size_t k = 0; k < net->wid; k++) {
-        printf("%0.3f ", net->imgs[FLAT4D(i, j, k, 1, net->hgt, net->wid, NUM_CHNL)]);
-      }
-      printf("\n");
-    }
-
-    printf("Blue Channel:\n");
-    for (size_t j = 0; j < net->hgt; j++) {
-      for (size_t k = 0; k < net->wid; k++) {
-        printf("%0.3f ", net->imgs[FLAT4D(i, j, k, 2, net->hgt, net->wid, NUM_CHNL)]);
-      }
-      printf("\n");
-    }
-  }
-}
-
-/* TODO: this is bugged- don't call it until you fix */
-__global__ void cuda_testClsfier(Classify_T *cls) {
-  size_t size = cls->numLyr;
-	for (size_t i = 0; i < size; i++) {
-		printf("  layer %lu:\n", i);
-		printf("    numNrn %lu:\n", cls->topo[i]);
-		for (size_t j = 0; j < cls->topo[i]; j++) {
-      if (j == cls->topo[i] - 1 && i != 0 && i != size - 1) {
-        printf("BIAS ");
-      } else {
-        printf("     ");
-      }
-      printf("neuron %lu (activ: %.1f) weights:\n      ", j, cls->activs[FLAT2D(i, j, cls->topo[i])]);
-      if (i != size - 1) {
-        size_t loopLimit = (i == size - 2) ? cls->topo[i + 1] : cls->topo[i + 1] - 1;
-				for (size_t k = 0; k < loopLimit; k++) {
-					printf("[%.1f] ", cls->wgts[FLAT3D(i, j, k, cls->topo[i], cls->topo[i + 1])]);
-				}
-      }
-			printf("\n");
-		}
-	}
-}
-
-void CNN_testClsfier(Classify_T *cls) {
-  cuda_testClsfier<<<1,1>>>(cls);
-  cudaDeviceSynchronize();
+  CNN_softmax_gradDescent<<<NUMBLK(sm->numLyr, BLKS_1D), BLKS_1D>>>(sm);
 }
 
 __global__ void cuda_testData(double *imgs, size_t *lbls, size_t idx, size_t hgt, size_t wid) {

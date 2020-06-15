@@ -1,5 +1,6 @@
 #include "../include/cnn.h"
 #include "../include/data.h"
+#include "../src/mat.h"
 #include "cifar.h"
 
 #include <stdio.h>
@@ -8,10 +9,15 @@
 
 const size_t ALLOWED_BYTES = 5000000000; /* gtx 1070 has 8GB of VRAM */
 
-void printOut(double *out) {
+void printOut(double *out, uint8_t lbl) {
   printf("Output layer:\n");
   for (uint8_t i = 0; i < NUM_OUT; i++) {
-    printf("[%u]: %f\n", i, out[i]);
+    printf("[%u]: %f", i, out[i]);
+    if (i == lbl) {
+      printf(" <--- truth\n");
+    } else {
+      printf("\n");
+    }
   }
 }
 
@@ -34,17 +40,19 @@ int main() {
   for (int i = 0; i < NUM_BATCH; i++) {
     fclose(batchBins[i]);
   }
-  Data_T *data = Cifar_prepData(cifar, 0, 1, 10000);
+  Data_T *data = Cifar_prepData(cifar, 0, 3, 600);
   FILE *cfgFile = fopen("./test.cfg", "r");
   assert(cfgFile);
 
   CNN_T *cnn = CNN_init(cfgFile, data);
-  CNN_train(cnn, data);
 
-  double *img = Cifar_getImg(cifar, 0);
+  size_t testIdx = 0;
+  double *img = Cifar_getImg(cifar, testIdx);
+  uint8_t lbl = Cifar_getLbl(cifar, testIdx);
   double *out = (double *)malloc(NUM_OUT * sizeof(double));
-  CNN_classify(cnn, img, out);
-  printOut(out);
+  CNN_train(cnn, data);
+  CNN_predict(cnn, img, out);
+  printOut(out, lbl);
 
   free(out);
   CNN_free(cnn);

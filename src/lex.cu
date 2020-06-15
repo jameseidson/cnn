@@ -214,10 +214,10 @@ void readRValue(Lexer_T *lex) {
   }
 }
 
-LayerT_T findLyr(char *layerS) {
+Layer_T findLyr(char *layerS) {
   for (int i = 0; i < NUM_LYR_TYPE; i++) {
     if (!strcmp(LYR_STR[i], layerS)) {
-      return (LayerT_T)i;
+      return (Layer_T)i;
     }
   }
 
@@ -245,7 +245,7 @@ void readLyrType(Lexer_T *lex) {
     }
   }
 
-  LayerT_T foundLyr = findLyr(buf);
+  Layer_T foundLyr = findLyr(buf);
   free(buf);
 
   if (foundLyr == INVALID_LYR) {

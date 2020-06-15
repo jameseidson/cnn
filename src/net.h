@@ -7,24 +7,21 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
+#include <stdbool.h>
 #include <math.h>
 
-__global__ void CNN_prepNet(Net_T *net, double *imgs, size_t num, size_t hgt, size_t wid);
+__global__ void CNN_prepFwd(Forward_T *fwd, double *imgs, size_t num, size_t hgt, size_t wid);
 
-__global__ void CNN_convolve(Net_T *net, Features_T *kern, double *buf);
+__global__ void CNN_convolve(Forward_T *fwd, Features_T *kern, double *buf);
+__global__ void CNN_pool(Pool_T *pool, Forward_T *fwd, double *buf);
+__global__ void CNN_normalize(Forward_T *fwd, NonLin_T func);
 
-__global__ void CNN_pool(Net_T *net, Pool_T *pool, double *buf);
+__global__ void CNN_softmax_fwd(Softmax_T *sm, Forward_T *fwd);
+__global__ void CNN_softmax_back(Softmax_T *sm, size_t lbl);
+__global__ void CNN_softmax_loss(Softmax_T *sm, size_t lbl, double *loss);
+__global__ void CNN_softmax_cpyOut(Softmax_T *sm, double *output);
 
-__global__ void CNN_softmax_fwd(Classify_T *cls);
-__global__ void CNN_softmax_bck(Classify_T *cls, size_t lbl);
-
-__global__ void CNN_normalize(Net_T *net);
-__global__ void CNN_getOut(Classify_T *cls, double *out);
-__global__ void CNN_getErr(Classify_T *cls, size_t lbl, double *err);
-
-/* TODO: delete these */
-void CNN_testClsfier(Classify_T *cls);
-__global__ void CNN_testNet(Net_T *net);
+/* TODO: delete this */
 void CNN_testData(Data_T *data, size_t idx);
 
 #endif
