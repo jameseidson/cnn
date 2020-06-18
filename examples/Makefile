@@ -8,13 +8,16 @@ LDLIBS = -lm -lcuda -lcudart -lcudadevrt
 
 all: cifar
 
-cifar: main.o cifar.o mat.o cnn.o lex.o net.o def.o
+cifar: main.o cifar.o mat.o cnn.o net.o def.o config.o
 	$(CU_C) -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 main.o: main.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 cifar.o: cifar.cu
+	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
+
+config.o: ../src/config.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 cnn.o: ../src/cnn.cu
@@ -27,9 +30,6 @@ net.o: ../src/net.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 def.o: ../src/def.cu
-	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
-
-lex.o: ../src/lex.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 clean:

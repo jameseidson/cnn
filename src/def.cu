@@ -147,6 +147,7 @@ __global__ void cuda_freeSoftmax(Softmax_T *sm) {
   cudaFree(sm->wTopo);
   cudaFree(sm->aIdx);
   cudaFree(sm->wIdx);
+  cudaFree(sm->deltas);
   cudaFree(sm->activs);
   cudaFree(sm->wgts);
 }

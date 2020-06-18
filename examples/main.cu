@@ -1,6 +1,5 @@
 #include "../include/cnn.h"
 #include "../include/data.h"
-#include "../src/mat.h"
 #include "cifar.h"
 
 #include <stdio.h>
@@ -34,32 +33,33 @@ int main() {
   for (size_t i = 0; i < NUM_BATCH; i++) {
     assert(batchBins[i]);
   }
-
   Cifar_Img_T *cifar = Cifar_readAll(batchBins);
-
   for (int i = 0; i < NUM_BATCH; i++) {
     fclose(batchBins[i]);
   }
-  Data_T *data = Cifar_prepData(cifar, 0, 3, 600);
-  FILE *cfgFile = fopen("./test.cfg", "r");
+  Data_T *data = Cifar_prepData(cifar, 0, 2, 3);
+
+  FILE *cfgFile = fopen("./cifar.cfg", "r");
   assert(cfgFile);
 
   CNN_T *cnn = CNN_init(cfgFile, data);
 
   size_t testIdx = 0;
+  double *out = (double *)malloc(NUM_OUT * sizeof(double));
   double *img = Cifar_getImg(cifar, testIdx);
   uint8_t lbl = Cifar_getLbl(cifar, testIdx);
-  double *out = (double *)malloc(NUM_OUT * sizeof(double));
+
   CNN_train(cnn, data);
+
   CNN_predict(cnn, img, out);
   printOut(out, lbl);
 
-  free(out);
-  CNN_free(cnn);
-  CNN_freeData(data);
   Cifar_freeAll(cifar);
+  CNN_freeData(data);
+  fclose(cfgFile);
+  CNN_free(cnn);
+  free(out);
   Cifar_freeImg(img);
-
   cudaDeviceReset();
   return 0;
 }
