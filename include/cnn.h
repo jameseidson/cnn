@@ -1,16 +1,14 @@
 #ifndef CNN_H
 #define CNN_H
 
-#include "config.h"
-#include "mat.h"
-#include "def.h"
-#include "net.h"
 #include "data.h"
+#include "config.h"
+#include "layer.h"
+#include "mat.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <math.h>
 
 typedef struct CNN CNN_T;
 

@@ -209,18 +209,18 @@ void CFG_free(NetConfig_T *cfg) {
         switch (cfg->lTypes[i]) {
           case CONVOLUTIONAL:
             printf("freeing conv\n");
-            CNN_freeFtrs((Features_T *)cfg->lyrs[i]);
+            LYR_conv_free((Features_T *)cfg->lyrs[i]);
             break;
           case POOLING:
             printf("freeing pool\n");
-            CNN_freePool((Pool_T *)cfg->lyrs[i]);
+            LYR_pool_free((Pool_T *)cfg->lyrs[i]);
             break;
           case NORMALIZATION:
             printf("freeing normalization\n");
             free(cfg->lyrs[i]);
             break;
           case FULLY_CONNECTED:
-            CNN_freeSoftmax((Softmax_T *)cfg->lyrs[i]);
+            LYR_softmax_free((Softmax_T *)cfg->lyrs[i]);
             break;
         }
       }
@@ -282,7 +282,7 @@ void CFG_parse_convLyr(Parser_T *p) {
   if (numFeat == 0 || featHgt == 0 || featWid == 0) {
     CFG_parse_throw(p, UNSET_CONFIG, false);
   }
-  p->cfg->lyrs[p->lyrIdx] = CNN_initFtrs(numFeat, featHgt, featWid);
+  p->cfg->lyrs[p->lyrIdx] = LYR_conv_init(numFeat, featHgt, featWid);
 
   p->cfg->numMat[FIN] = p->cfg->numMat[FIN] * numFeat;
   p->cfg->rows[FIN] = (p->cfg->rows[FIN] - featHgt) + 1;
@@ -316,7 +316,7 @@ void CFG_parse_poolLyr(Parser_T *p) {
   if (winDim == 0 || stride == 0) {
     CFG_parse_throw(p, UNSET_CONFIG, false);
   }
-  p->cfg->lyrs[p->lyrIdx] = CNN_initPool(winDim, stride);
+  p->cfg->lyrs[p->lyrIdx] = LYR_pool_init(winDim, stride);
 
   p->cfg->rows[FIN] = ((p->cfg->rows[FIN] - winDim) / stride) + 1;
   p->cfg->cols[FIN] = ((p->cfg->cols[FIN] - winDim) / stride) + 1;
@@ -341,7 +341,7 @@ void CFG_parse_normLyr(Parser_T *p) {
 }
 
 void CFG_parse_sftmxLyr(Parser_T *p) {
-  int nLin = -1;
+  int nLin = INVALID;
   double lrnRate = 0.0;
   size_t numHidden = 0, numOut = 0;
   ADVANCE(p);
@@ -374,7 +374,7 @@ void CFG_parse_sftmxLyr(Parser_T *p) {
     }
   }
 
-  if (nLin == -1 || lrnRate == 0.0 || !p->listBuf || numOut == 0) {
+  if (nLin == INVALID || lrnRate == 0.0 || !p->listBuf || numOut == 0) {
     CFG_parse_throw(p, UNSET_CONFIG, false);
   }
   
@@ -386,7 +386,7 @@ void CFG_parse_sftmxLyr(Parser_T *p) {
   }
   topo[0] = p->cfg->numMat[FIN] * p->cfg->rows[FIN] * p->cfg->cols[FIN] * NUM_CHNL;
   topo[numLyr - 1] = numOut;
-  p->cfg->lyrs[p->lyrIdx] = CNN_initSoftmax(topo, numLyr, lrnRate, (NonLin_T)nLin);
+  p->cfg->lyrs[p->lyrIdx] = LYR_softmax_init(topo, numLyr, lrnRate, (NonLin_T)nLin);
   p->cfg->numOut = numOut;
 
   free(topo);
@@ -824,7 +824,7 @@ static inline int CFG_lex_strToEnum(char *inStr, const char **enumStr, unsigned 
     }
   }
 
-  return -1;
+  return INVALID;
 }
 
 static inline int CFG_lex_peek(FILE *f) {

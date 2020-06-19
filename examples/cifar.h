@@ -1,7 +1,7 @@
 #ifndef CIFAR_H
 #define CIFAR_H
 
-#include "net.h"
+#include "../include/cnn.h"
 
 #include <stdio.h>
 #include <stdlib.h>

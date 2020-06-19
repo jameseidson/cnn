@@ -1,14 +1,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "def.h"
-#include "net.h"
+#include "layer.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <ctype.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 static const unsigned INIT = 0;
 static const unsigned FIN = 1;

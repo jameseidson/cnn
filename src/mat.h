@@ -4,10 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <float.h>
-#include <assert.h>
-#include <math.h>
 #include <stdbool.h>
+#include <float.h>
+#include <math.h>
 
 #define FLAT2D(i, j, max_j) ((i * max_j) + j)
 #define FLAT3D(i, j, k, max_j, max_k) ((i * max_j * max_k) + (j * max_k) + k)

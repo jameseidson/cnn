@@ -8,7 +8,7 @@ LDLIBS = -lm -lcuda -lcudart -lcudadevrt
 
 all: cifar
 
-cifar: main.o cifar.o mat.o cnn.o net.o def.o config.o
+cifar: main.o cifar.o data.o cnn.o config.o layer.o mat.o
 	$(CU_C) -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 main.o: main.cu
@@ -17,19 +17,19 @@ main.o: main.cu
 cifar.o: cifar.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
-config.o: ../src/config.cu
+data.o: ../src/data.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 cnn.o: ../src/cnn.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
+config.o: ../src/config.cu
+	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
+
+layer.o: ../src/layer.cu
+	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
+
 mat.o: ../src/mat.cu
-	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
-
-net.o: ../src/net.cu
-	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
-
-def.o: ../src/def.cu
 	$(CU_C) -dc -o $@ $^ $(CU_CFLAGS) $(LDFLAGS) $(IFLAGS) $(LDLIBS)
 
 clean:

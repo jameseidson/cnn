@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
+#include <assert.h>
 
 const size_t ALLOWED_BYTES = 5000000000; /* gtx 1070 has 8GB of VRAM */
 
@@ -55,7 +56,7 @@ int main() {
   printOut(out, lbl);
 
   Cifar_freeAll(cifar);
-  CNN_freeData(data);
+  CNN_data_free(data);
   fclose(cfgFile);
   CNN_free(cnn);
   free(out);
