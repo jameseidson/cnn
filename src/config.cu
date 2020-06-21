@@ -2,7 +2,7 @@
 
 static const unsigned MAX_LYR_SIZE = 15;
 static const unsigned MAX_KEY_SIZE = 12;
-static const unsigned MAX_NUM_SIZE = 64;
+static const unsigned MAX_NUM_SIZE = 12;
 static const unsigned MAX_STR_SIZE = 7;
 static const unsigned NUM_LYR_TYPE = 5;
 
@@ -37,6 +37,7 @@ typedef enum ParseErr {
   NET_REDEF,
   EXTRA_LYR,
   INSUF_LYR,
+	BAD_POOL_CFG,
   BAD_CONFIG,
   UNSET_CONFIG,
   EXP_KEY,
@@ -208,15 +209,12 @@ void CFG_free(NetConfig_T *cfg) {
       if (cfg->lyrs[i] != NULL) {
         switch (cfg->lTypes[i]) {
           case CONVOLUTIONAL:
-            printf("freeing conv\n");
-            LYR_conv_free((Features_T *)cfg->lyrs[i]);
+            LYR_conv_free((Conv_T *)cfg->lyrs[i]);
             break;
           case POOLING:
-            printf("freeing pool\n");
             LYR_pool_free((Pool_T *)cfg->lyrs[i]);
             break;
           case NORMALIZATION:
-            printf("freeing normalization\n");
             free(cfg->lyrs[i]);
             break;
           case FULLY_CONNECTED:
@@ -282,7 +280,7 @@ void CFG_parse_convLyr(Parser_T *p) {
   if (numFeat == 0 || featHgt == 0 || featWid == 0) {
     CFG_parse_throw(p, UNSET_CONFIG, false);
   }
-  p->cfg->lyrs[p->lyrIdx] = LYR_conv_init(numFeat, featHgt, featWid);
+  p->cfg->lyrs[p->lyrIdx] = LYR_conv_init(numFeat, featHgt, featWid, p->cfg->numMat[FIN], p->cfg->rows[FIN], p->cfg->cols[FIN]);
 
   p->cfg->numMat[FIN] = p->cfg->numMat[FIN] * numFeat;
   p->cfg->rows[FIN] = (p->cfg->rows[FIN] - featHgt) + 1;
@@ -315,11 +313,14 @@ void CFG_parse_poolLyr(Parser_T *p) {
 
   if (winDim == 0 || stride == 0) {
     CFG_parse_throw(p, UNSET_CONFIG, false);
-  }
-  p->cfg->lyrs[p->lyrIdx] = LYR_pool_init(winDim, stride);
+  } 
+	if (((p->cfg->rows[FIN] - winDim) % stride) != 0 || ((p->cfg->cols[FIN] - winDim) % stride) != 0) {
+    CFG_parse_throw(p, BAD_POOL_CFG, false);
+	}
 
-  p->cfg->rows[FIN] = ((p->cfg->rows[FIN] - winDim) / stride) + 1;
-  p->cfg->cols[FIN] = ((p->cfg->cols[FIN] - winDim) / stride) + 1;
+  p->cfg->lyrs[p->lyrIdx] = LYR_pool_init(winDim, stride, p->cfg->numMat[FIN], p->cfg->rows[FIN], p->cfg->cols[FIN]);
+  p->cfg->rows[FIN] = POOL_OUT(p->cfg->rows[FIN], winDim, stride);
+  p->cfg->cols[FIN] = POOL_OUT(p->cfg->cols[FIN], winDim, stride);
 }
 
 void CFG_parse_normLyr(Parser_T *p) {
@@ -374,7 +375,7 @@ void CFG_parse_sftmxLyr(Parser_T *p) {
     }
   }
 
-  if (nLin == INVALID || lrnRate == 0.0 || !p->listBuf || numOut == 0) {
+  if (nLin == INVALID || lrnRate == 0.0 || numOut == 0) {
     CFG_parse_throw(p, UNSET_CONFIG, false);
   }
   
@@ -517,10 +518,13 @@ void CFG_parse_throw(Parser_T *p, ParseErr_T errType, bool isNull) {
       fprintf(stderr, "the 'net' layer can only be defined once\n");
       break;
     case EXTRA_LYR:
-      fprintf(stderr, "extraneous layer definition\n");
+      fprintf(stderr, "more layers were defined than specified\n");
       break;
     case INSUF_LYR:
-      fprintf(stderr, "an insufficient number of layers were defined\n");
+      fprintf(stderr, "more layers were specified than defined\n");
+      break;
+    case BAD_POOL_CFG:
+      fprintf(stderr, "pooling layers must satisfy ((inputDim - windowDim) %% stride == 0) for x and y dimensions\n");
       break;
     case BAD_CONFIG:
       fprintf(stderr, "configuration option is not a valid member of its parent layer\n");
@@ -834,13 +838,13 @@ static inline int CFG_lex_peek(FILE *f) {
   return c;
 }
 
-void CFG_lex_freeTok(TokenList_T *tokens) {
-  if (!tokens) {
-    return;
+void CFG_lex_freeTok(TokenList_T *head) {
+  TokenList_T *t = head;
+  while (t) {
+    TokenList_T *next = t->next;
+    free(t);
+    t = next;
   }
-
-  CFG_lex_freeTok(tokens->next);
-  free(tokens);
 }
 
 void CFG_lex_free(Lexer_T *lex) {

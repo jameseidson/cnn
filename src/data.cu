@@ -1,4 +1,4 @@
-#include "../include/data.h"
+#include "data.h"
 
 Data_T *CNN_data_init(size_t numEpoch, size_t num, size_t hgt, size_t wid, size_t *lbls, double *imgs) {
   Data_T *data = (Data_T *)malloc(sizeof(Data_T));

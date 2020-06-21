@@ -2,9 +2,9 @@
 #define CNN_H
 
 #include "data.h"
-#include "config.h"
-#include "layer.h"
-#include "mat.h"
+#include "../src/config.h"
+#include "../src/layer.h"
+#include "../src/mat.h"
 
 #include <stdio.h>
 #include <stdlib.h>

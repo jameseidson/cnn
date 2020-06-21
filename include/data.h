@@ -1,7 +1,7 @@
 #ifndef DATA_H
 #define DATA_H
 
-#include "mat.h"
+#include "../src/mat.h"
 
 #include <stdio.h>
 #include <stdlib.h>

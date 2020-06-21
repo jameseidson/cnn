@@ -7,7 +7,7 @@
 #include <cuda.h>
 #include <assert.h>
 
-const size_t ALLOWED_BYTES = 5000000000; /* gtx 1070 has 8GB of VRAM */
+const size_t ALLOWED_BYTES = 6000000000; /* gtx 1070 has 8GB of VRAM */
 
 void printOut(double *out, uint8_t lbl) {
   printf("Output layer:\n");
@@ -38,14 +38,14 @@ int main() {
   for (int i = 0; i < NUM_BATCH; i++) {
     fclose(batchBins[i]);
   }
-  Data_T *data = Cifar_prepData(cifar, 0, 2, 3);
+  Data_T *data = Cifar_prepData(cifar, 0, 10, 600);
 
   FILE *cfgFile = fopen("./cifar.cfg", "r");
   assert(cfgFile);
 
   CNN_T *cnn = CNN_init(cfgFile, data);
 
-  size_t testIdx = 0;
+  size_t testIdx = 1;
   double *out = (double *)malloc(NUM_OUT * sizeof(double));
   double *img = Cifar_getImg(cifar, testIdx);
   uint8_t lbl = Cifar_getLbl(cifar, testIdx);

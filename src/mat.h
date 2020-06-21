@@ -12,7 +12,11 @@
 #define FLAT3D(i, j, k, max_j, max_k) ((i * max_j * max_k) + (j * max_k) + k)
 #define FLAT4D(i, j, k, l, max_j, max_k, max_l) ((i * max_j * max_k * max_l) + (j * max_k * max_l) + (k * max_l) + l)
 
-#define NUMBLK(dim, blkSize) (dim / blkSize) + 1
+#define NUMBLK(dim, blkSize) ((dim / blkSize) + 1)
+#define LAUNCH1D(dim) NUMBLK(dim, BLKS_1D), BLKS_1D
+
+#define CONV_OUT(dim, fltrDim) (dim - fltrDim + 1)
+#define POOL_OUT(dim, wDim, stride) (((dim - wDim) / stride) + 1)
 
 static const uint16_t BLKS_1D = 256;
 static const uint16_t BLKS_2D = 16;
@@ -32,13 +36,9 @@ typedef struct MatList {
   double *mats;
 } MatList_T;
 
-__global__ void MAT_randomize(double *m, size_t numElm);
-
 /* launch with (numElm) threads */
+__global__ void MAT_randomize(double *m, size_t numElm, size_t reduFac);
 __global__ void MAT_setVal(double *m, size_t numElm, double val);
-
-/* launch with (numElm) threads */
-__global__ void MAT_randomize(double *m, size_t numElm);
 
 /* deep copies src into dest */
 /* launch with (numElm) threads */
@@ -61,7 +61,7 @@ __global__ void MAT_sigmoid(double *mA, double *mB, size_t numElm);
 /* launch with (numElm) threads */
 __global__ void MAT_loss(double *m, size_t numElm, size_t lbl, double *loss);
 
-/* launch with wRows threads */
+/* launch with (wRows) threads */
 __global__ void MAT_fwdProp(double *mWgt, double *vAct, double *vNxtAct, size_t wRows, size_t wCols, NonLin_T fType);
 
 /* applies delta equation */
@@ -75,11 +75,15 @@ __global__ void MAT_applyGradient(double *vAct, double *vNxtDelt, double *mWgt, 
 
 /* mB is output */
 /* launch with (bRows), (bCols) threads */
-__global__ void MAT_convolve(double *mA, double *mB, double *mKern, size_t aRows, size_t aCols, size_t kRows, size_t kCols);
+__global__ void MAT_convolve(double *mA, double *mB, double *mFltr, size_t aRows, size_t aCols, size_t fRows, size_t fCols, bool applyGrad);
+__global__ void MAT_inv_convolve(double *mA, double *mB, double *mFltr, size_t aRows, size_t aCols, size_t fRows, size_t fCols, bool updateDeltas);
 
 /* mB is output */
 /* launch with (bRows), (bCols) threads */
-__global__ void MAT_pool(double *mA, double *mB, size_t aRows, size_t aCols, size_t wDim, size_t stride);
+__global__ void MAT_pool(double *mA, double *mB, size_t *idxs, size_t aRows, size_t aCols, size_t wDim, size_t stride);
+
+/* launch with (aRows * aCols * NUM_CHNL) threads */
+__global__ void MAT_deltas_pool(double *mA, double *mB, size_t *idxs, size_t aRows, size_t aCols);
 
 /* launch with 1 thread */
 __global__ void MAT_print(double *m, size_t rows, size_t cols, bool is3D);

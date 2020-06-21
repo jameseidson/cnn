@@ -11,10 +11,10 @@
 
 #define LCG(seed) ((1103515245 * seed + 12345) % INT_MAX)
 
-__global__ void MAT_randomize(double *m, size_t numElm) {
+__global__ void MAT_randomize(double *m, size_t numElm, size_t reduFac) {
   size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
   if (x < numElm) {
-    m[x] = (double)(LCG(x) / (double)INT_MAX / (double)100);
+    m[x] = (double)(LCG(x) / (double)INT_MAX / reduFac);
   }
 }
 
@@ -93,6 +93,7 @@ __global__ void MAT_deltas_out(double *vOut, double *vDelt, size_t numElm, size_
 
   if (x < numElm) {
     vDelt[x] = DSE(vOut[x], (double)(x == lbl)) * ((fType == RELU) ? DRELU(vOut[x]) : DSIG(vOut[x]));
+    __syncthreads();
   }
 }
 
@@ -120,49 +121,103 @@ __global__ void MAT_applyGradient(double *vAct, double *vNxtDelt, double *mWgt, 
   }
 }
 
-__global__ void MAT_convolve(double *mA, double *mB, double *mKern, size_t aRows, size_t aCols, size_t kRows, size_t kCols) {
+__global__ void MAT_convolve(double *mA, double *mB, double *mFltr, size_t aRows, size_t aCols, size_t fRows, size_t fCols, bool applyGrad) {
   size_t r = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
   size_t c = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
 
-  size_t kernElm = kRows * kCols;
-  size_t bRows = aRows - kRows + 1;
-  size_t bCols = aCols - kCols + 1;
+  size_t fElm = fRows * fCols * NUM_CHNL;
+  size_t bRows = CONV_OUT(aRows, fRows);
+  size_t bCols = CONV_OUT(aCols, fCols);
 
   if (r < bRows && c < bCols) {
     double chnlTotal[NUM_CHNL] = { 0.0, 0.0, 0.0 };
-    for (size_t i = r; i - r < kRows; i++) {
-      for (size_t j = c; j - c < kCols; j++) {
+    for (size_t i = r; i - r < fRows; i++) {
+      for (size_t j = c; j - c < fCols; j++) {
         for (size_t k = 0; k < NUM_CHNL; k++) {
-          chnlTotal[k] += mA[FLAT3D(i, j, k, aRows, NUM_CHNL)] * mKern[FLAT3D((i - r), (j - c), k, kCols, NUM_CHNL)];
+          chnlTotal[k] += mA[FLAT3D(i, j, k, aCols, NUM_CHNL)] * mFltr[FLAT3D((i - r), (j - c), k, fCols, NUM_CHNL)];
         }
       }
     }
     for (size_t i = 0; i < NUM_CHNL; i++) {
-      mB[FLAT3D(r, c, i, bCols, NUM_CHNL)] = chnlTotal[i] / kernElm;
+      if (applyGrad) {
+        mB[FLAT3D(r, c, i, bCols, NUM_CHNL)] -= (chnlTotal[i] / fElm);
+      } else {
+        mB[FLAT3D(r, c, i, bCols, NUM_CHNL)] = chnlTotal[i] / fElm;
+      }
     }
   }
 }
 
-__global__ void MAT_pool(double *mA, double *mB, size_t aRows, size_t aCols, size_t wDim, size_t stride) {
+__global__ void MAT_inv_convolve(double *mA, double *mB, double *mFltr, size_t aRows, size_t aCols, size_t fRows, size_t fCols, bool updateDeltas) {
   size_t r = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
   size_t c = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
 
-  size_t bCols = ((aCols - wDim) / stride) + 1;
-  size_t bRows = ((aRows - wDim) / stride) + 1;
+  size_t fMaxChnlIdx = (fRows * fCols) - 1;
+  size_t fElm = fRows * fCols * NUM_CHNL;
+  size_t bRows = aRows + fRows - 1;
+  size_t bCols = aRows + fRows - 1;
+  size_t rPad = fRows - 1;
+  size_t cPad = fCols - 1;
 
   if (r < bRows && c < bCols) {
-    double chnlMax[NUM_CHNL] = { DBL_MIN, DBL_MIN, DBL_MIN };
-
-    for (size_t i = 0; i < wDim; i++) {
-      for (size_t j = 0; j < wDim; j++) {
-        for (size_t k = 0; k < NUM_CHNL; k++) {
-          double curElm = mA[FLAT3D(FLAT2D(r, i, stride), FLAT2D(c, j, stride), k, bCols, NUM_CHNL)];
-          if (curElm > chnlMax[k]) {
-            chnlMax[k] = curElm;
+    r -= rPad;
+    c -= cPad;
+    double chnlTotal[NUM_CHNL] = { 0.0, 0.0, 0.0 };
+    for (size_t i = r; i - r < fRows; i++) {
+      for (size_t j = c; j - c < fCols; j++) {
+        if (i > 0 && i < aRows && j > 0 && j < aCols) {
+          for (size_t k = 0; k < NUM_CHNL; k++) {
+            chnlTotal[k] += mA[FLAT3D(i, j, k, aCols, NUM_CHNL)] * mFltr[(fMaxChnlIdx - FLAT2D((i - r), (j - c), fCols)) * NUM_CHNL + k];
           }
         }
       }
     }
+    for (size_t i = 0; i < NUM_CHNL; i++) {
+      if (updateDeltas) {
+        mB[FLAT3D((r + rPad), (c + cPad), i, bCols, NUM_CHNL)] += chnlTotal[i] / fElm;
+      } else {
+        mB[FLAT3D((r + rPad), (c + cPad), i, bCols, NUM_CHNL)] = chnlTotal[i] / fElm;
+      }
+    }
+  }
+}
+
+__global__ void MAT_pool(double *mA, double *mB, size_t *idxs, size_t aRows, size_t aCols, size_t wDim, size_t stride) {
+  size_t r = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+  size_t c = FLAT2D(blockIdx.y, threadIdx.y, blockDim.y);
+
+  size_t bRows = POOL_OUT(aRows, wDim, stride);
+  size_t bCols = POOL_OUT(aCols, wDim, stride);
+
+  if (r < bRows && c < bCols) {
+    double chnlMax[NUM_CHNL] = { DBL_MIN, DBL_MIN, DBL_MIN };
+    size_t maxIdx[NUM_CHNL];
+
+    for (size_t i = 0; i < wDim; i++) {
+      for (size_t j = 0; j < wDim; j++) {
+        for (size_t k = 0; k < NUM_CHNL; k++) {
+          size_t idx = FLAT3D(FLAT2D(r, i, stride), FLAT2D(c, j, stride), k, bCols, NUM_CHNL);
+          double curElm = mA[idx];
+          if (curElm > chnlMax[k]) {
+            chnlMax[k] = curElm;
+            maxIdx[k] = idx;
+          }
+        }
+      }
+    }
+    for (size_t i = 0; i < NUM_CHNL; i++) {
+      size_t idx = FLAT3D(r, c, i, bCols, NUM_CHNL);
+      mB[idx] = chnlMax[i];
+      idxs[idx] = maxIdx[i];
+    }
+  }
+}
+
+__global__ void MAT_deltas_pool(double *mA, double *mB, size_t *idxs, size_t aRows, size_t aCols) {
+  size_t x = FLAT2D(blockIdx.x, threadIdx.x, blockDim.x);
+
+  if (x < aRows * aCols * NUM_CHNL) {
+    mB[idxs[x]] = mA[x];
   }
 }
 
@@ -172,7 +227,7 @@ __global__ void MAT_print(double *m, size_t rows, size_t cols, bool is3D) {
       printf("Channel %u:\n", k);
       for (size_t i = 0; i < rows; i++) {
         for (size_t j = 0; j < cols; j++) {
-          printf("%0.3f ", m[FLAT3D(i, j, k, cols, NUM_CHNL)]);
+          printf("%1.1f ", m[FLAT3D(i, j, k, cols, NUM_CHNL)]);
         }
         printf("\n");
       }
@@ -180,13 +235,13 @@ __global__ void MAT_print(double *m, size_t rows, size_t cols, bool is3D) {
     printf("\n");
   } else if (cols == 1) {
     for (size_t i = 0; i < rows; i++) {
-      printf("%0.3f", m[i]);
+      printf("%1.1f", m[i]);
       printf("\n");
     }
   } else {
     for (size_t i = 0; i < rows; i++) {
       for (size_t j = 0; j < cols; j++) {
-        printf("%0.3f ", m[FLAT2D(i, j, cols)]);
+        printf("%1.1f ", m[FLAT2D(i, j, cols)]);
       }
       printf("\n");
     }

@@ -2,7 +2,7 @@ CU_C = nvcc
 
 CU_CFLAGS = -g -O0 -arch=sm_35 -lineinfo -use_fast_math -rdc=true
 
-IFLAGS = -I/opt/cuda/include/ -I../src/
+IFLAGS = -I/opt/cuda/include/ -I../include/
 LDFLAGS = -L/opt/cuda/lib64/
 LDLIBS = -lm -lcuda -lcudart -lcudadevrt
 
