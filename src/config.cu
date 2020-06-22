@@ -37,7 +37,7 @@ typedef enum ParseErr {
   NET_REDEF,
   EXTRA_LYR,
   INSUF_LYR,
-	BAD_POOL_CFG,
+  BAD_POOL_CFG,
   BAD_CONFIG,
   UNSET_CONFIG,
   EXP_KEY,
@@ -283,8 +283,8 @@ void CFG_parse_convLyr(Parser_T *p) {
   p->cfg->lyrs[p->lyrIdx] = LYR_conv_init(numFeat, featHgt, featWid, p->cfg->numMat[FIN], p->cfg->rows[FIN], p->cfg->cols[FIN]);
 
   p->cfg->numMat[FIN] = p->cfg->numMat[FIN] * numFeat;
-  p->cfg->rows[FIN] = (p->cfg->rows[FIN] - featHgt) + 1;
-  p->cfg->cols[FIN] = (p->cfg->cols[FIN] - featWid) + 1;
+  p->cfg->rows[FIN] = CONV_OUT(p->cfg->rows[FIN], featHgt);
+  p->cfg->cols[FIN] = CONV_OUT(p->cfg->cols[FIN], featWid);
 }
 
 void CFG_parse_poolLyr(Parser_T *p) {
