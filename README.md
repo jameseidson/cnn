@@ -1,5 +1,5 @@
 # cnn
-cnn is a GPU-based, vectorized convolutional neural net library built completely from scratch in cuda c. It has zero dependencies (other than [cuda](https://developer.nvidia.com/cuda-zone), of course) and is designed to be easy to understand and reasonably fast.
+cnn is a GPU-based, vectorized convolutional neural net library built completely from scratch in cuda c. It has zero dependencies (other than [cuda](https://developer.nvidia.com/cuda-zone), of course) and is designed to be easy to understand.
 
 ## Usage
 ```
